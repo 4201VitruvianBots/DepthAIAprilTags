@@ -3,7 +3,7 @@
 import cv2
 import depthai as dai
 import numpy as np
-import apriltag
+# import apriltag
 
 from common.utils import FPSHandler
 
@@ -11,17 +11,17 @@ from common.utils import FPSHandler
 pipeline = dai.Pipeline()
 
 # Define sources and outputs
-# camRgb = pipeline.create(dai.node.ColorCamera)
-monoLeft = pipeline.create(dai.node.MonoCamera)
+camRgb = pipeline.create(dai.node.ColorCamera)
+# monoLeft = pipeline.create(dai.node.MonoCamera)
 # monoRight = pipeline.create(dai.node.MonoCamera)
 
-edgeDetectorLeft = pipeline.create(dai.node.EdgeDetector)
+# edgeDetectorLeft = pipeline.create(dai.node.EdgeDetector)
 # edgeDetectorRight = pipeline.create(dai.node.EdgeDetector)
-# edgeDetectorRgb = pipeline.create(dai.node.EdgeDetector)
+edgeDetectorRgb = pipeline.create(dai.node.EdgeDetector)
 
-xoutEdgeLeft = pipeline.create(dai.node.XLinkOut)
+# xoutEdgeLeft = pipeline.create(dai.node.XLinkOut)
 # xoutEdgeRight = pipeline.create(dai.node.XLinkOut)
-# xoutEdgeRgb = pipeline.create(dai.node.XLinkOut)
+xoutEdgeRgb = pipeline.create(dai.node.XLinkOut)
 xinEdgeCfg = pipeline.create(dai.node.XLinkIn)
 
 edgeLeftStr = "edge left"
@@ -29,35 +29,36 @@ edgeRightStr = "edge right"
 edgeRgbStr = "edge rgb"
 edgeCfgStr = "edge cfg"
 
-xoutEdgeLeft.setStreamName(edgeLeftStr)
+# xoutEdgeLeft.setStreamName(edgeLeftStr)
 # xoutEdgeRight.setStreamName(edgeRightStr)
-# xoutEdgeRgb.setStreamName(edgeRgbStr)
+xoutEdgeRgb.setStreamName(edgeRgbStr)
 xinEdgeCfg.setStreamName(edgeCfgStr)
 
 # Properties
-# camRgb.setBoardSocket(dai.CameraBoardSocket.RGB)
-# camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+camRgb.setBoardSocket(dai.CameraBoardSocket.RGB)
+camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+# camRgb.setFps(60) # Breaks edge detection
 
-monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-monoLeft.setBoardSocket(dai.CameraBoardSocket.LEFT)
-monoLeft.setFps(200)
+# monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+# monoLeft.setBoardSocket(dai.CameraBoardSocket.LEFT)
+# monoLeft.setFps(200)
 # monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
 # monoRight.setBoardSocket(dai.CameraBoardSocket.RIGHT)
 
-# edgeDetectorRgb.setMaxOutputFrameSize(camRgb.getVideoWidth() * camRgb.getVideoHeight())
+edgeDetectorRgb.setMaxOutputFrameSize(camRgb.getVideoWidth() * camRgb.getVideoHeight())
 
 # Linking
-monoLeft.out.link(edgeDetectorLeft.inputImage)
+# monoLeft.out.link(edgeDetectorLeft.inputImage)
 # monoRight.out.link(edgeDetectorRight.inputImage)
-# camRgb.video.link(edgeDetectorRgb.inputImage)
+camRgb.video.link(edgeDetectorRgb.inputImage)
 
-edgeDetectorLeft.outputImage.link(xoutEdgeLeft.input)
+# edgeDetectorLeft.outputImage.link(xoutEdgeLeft.input)
 # edgeDetectorRight.outputImage.link(xoutEdgeRight.input)
-# edgeDetectorRgb.outputImage.link(xoutEdgeRgb.input)
+edgeDetectorRgb.outputImage.link(xoutEdgeRgb.input)
 
-xinEdgeCfg.out.link(edgeDetectorLeft.inputConfig)
+# xinEdgeCfg.out.link(edgeDetectorLeft.inputConfig)
 # xinEdgeCfg.out.link(edgeDetectorRight.inputConfig)
-# xinEdgeCfg.out.link(edgeDetectorRgb.inputConfig)
+xinEdgeCfg.out.link(edgeDetectorRgb.inputConfig)
 
 fps = FPSHandler()
 
@@ -65,23 +66,23 @@ fps = FPSHandler()
 with dai.Device(pipeline) as device:
 
     # Output/input queues
-    edgeLeftQueue = device.getOutputQueue(edgeLeftStr, 8, False)
+    # edgeLeftQueue = device.getOutputQueue(edgeLeftStr, 8, False)
     # edgeRightQueue = device.getOutputQueue(edgeRightStr, 8, False)
-    # edgeRgbQueue = device.getOutputQueue(edgeRgbStr, 8, False)
+    edgeRgbQueue = device.getOutputQueue(edgeRgbStr, 8, False)
     edgeCfgQueue = device.getInputQueue(edgeCfgStr)
 
     print("Switch between sobel filter kernels using keys '1' and '2'")
 
     while(True):
-        edgeLeft = edgeLeftQueue.get()
+        # edgeLeft = edgeLeftQueue.get()
         # edgeRight = edgeRightQueue.get()
-        # edgeRgb = edgeRgbQueue.get()
+        edgeRgb = edgeRgbQueue.get()
 
-        edgeLeftFrame = edgeLeft.getFrame()
+        edgeFrame = edgeRgb.getFrame()
         # edgeRightFrame = edgeRight.getFrame()
         # edgeRgbFrame = edgeRgb.getFrame()
 
-        thresh = cv2.threshold(edgeLeftFrame, 25, 255, cv2.THRESH_BINARY)[1]
+        thresh = cv2.threshold(edgeFrame, 25, 255, cv2.THRESH_BINARY)[1]
         contours,_ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         squares = []
@@ -90,16 +91,17 @@ with dai.Device(pipeline) as device:
             cnt_len = cv2.arcLength(cnt, True)
             cnt = cv2.approxPolyDP(cnt, 0.02*cnt_len, True)
 
-            if len(cnt) == 4 and area > 100:
+            if len(cnt) == 4 and area > 1000:
                 squares.append(cnt)
 
-        cv2.drawContours(edgeLeftFrame, squares, -1, color=(255, 255, 255), thickness=cv2.FILLED)
+        if len(squares) > 0:
+            cv2.drawContours(edgeFrame, squares, -1, color=(255, 255, 255), thickness=cv2.FILLED)
 
         fps.nextIter()
-        cv2.putText(edgeLeftFrame, "{:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
+        cv2.putText(edgeFrame, "{:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
         # Show the frame
-        cv2.imshow(edgeLeftStr, edgeLeftFrame)
+        cv2.imshow(edgeLeftStr, edgeFrame)
         # cv2.imshow(edgeRightStr, edgeRightFrame)
         # cv2.imshow(edgeRgbStr, edgeRgbFrame)
 
