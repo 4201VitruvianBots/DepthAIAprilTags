@@ -13,29 +13,23 @@ from common.utils import FPSHandler
 # Create pipeline
 pipeline = dai.Pipeline()
 
-CAMERA_TYPE = 'MONO'
+CAMERA_TYPE = 'RGB'
 
 
 if CAMERA_TYPE == 'RGB':
     # Define sources and outputs
     cam = pipeline.create(dai.node.ColorCamera)
-    # monoLeft = pipeline.create(dai.node.MonoCamera)
-    # monoRight = pipeline.create(dai.node.MonoCamera)
 
     edgeDetector = pipeline.create(dai.node.EdgeDetector)
-    # edgeDetectorLeft = pipeline.create(dai.node.EdgeDetector)
-    # edgeDetectorRight = pipeline.create(dai.node.EdgeDetector)
-
-    # xoutEdgeLeft = pipeline.create(dai.node.XLinkOut)
-    # xoutEdgeRight = pipeline.create(dai.node.XLinkOut)
+    xoutRgb = pipeline.create(dai.node.XLinkOut)
     xoutEdge = pipeline.create(dai.node.XLinkOut)
     xinEdgeCfg = pipeline.create(dai.node.XLinkIn)
 
-    edgeStr = "rgb"
+    videoStr = "rgb"
+    edgeStr = "rgb edge"
     edgeCfgStr = "edge cfg"
 
-    # xoutEdgeLeft.setStreamName(edgeLeftStr)
-    # xoutEdgeRight.setStreamName(edgeRightStr)
+    xoutRgb.setStreamName(videoStr)
     xoutEdge.setStreamName(edgeStr)
     xinEdgeCfg.setStreamName(edgeCfgStr)
 
@@ -44,15 +38,10 @@ if CAMERA_TYPE == 'RGB':
     cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
     # camRgb.setFps(60) # Breaks edge detection
 
-    # monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-    # monoLeft.setBoardSocket(dai.CameraBoardSocket.LEFT)
-    # monoLeft.setFps(200)
-    # monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-    # monoRight.setBoardSocket(dai.CameraBoardSocket.RIGHT)
-
     edgeDetector.setMaxOutputFrameSize(cam.getVideoWidth() * cam.getVideoHeight())
 
     # Linking
+    cam.video.link(xoutRgb.input)
     cam.video.link(edgeDetector.inputImage)
 
     edgeDetector.outputImage.link(xoutEdge.input)
@@ -68,10 +57,11 @@ else:
     xoutEdge = pipeline.create(dai.node.XLinkOut)
     xinEdgeCfg = pipeline.create(dai.node.XLinkIn)
 
+    videoStr = "mono"
     edgeStr = "mono left"
     edgeCfgStr = "edge cfg"
 
-    xoutMono.setStreamName("mono")
+    xoutMono.setStreamName(videoStr)
     xoutEdge.setStreamName(edgeStr)
     xinEdgeCfg.setStreamName(edgeCfgStr)
 
@@ -118,7 +108,7 @@ with dai.Device(pipeline) as device:
     # Output/input queues
     # edgeLeftQueue = device.getOutputQueue(edgeLeftStr, 8, False)
     # edgeRightQueue = device.getOutputQueue(edgeRightStr, 8, False)
-    monoQueue = device.getOutputQueue("mono", 4, False)
+    videoQueue = device.getOutputQueue(videoStr, 4, False)
     edgeQueue = device.getOutputQueue(edgeStr, 4, False)
     edgeCfgQueue = device.getInputQueue(edgeCfgStr)
 
@@ -127,10 +117,10 @@ with dai.Device(pipeline) as device:
     while(True):
         # edgeLeft = edgeLeftQueue.get()
         # edgeRight = edgeRightQueue.get()
-        monoOutput = monoQueue.get()
+        videoOutput = videoQueue.get()
         edgeOutput = edgeQueue.get()
 
-        monoFrame = monoOutput.getFrame()
+        videoFrame = videoOutput.getFrame()
         edgeFrame = edgeOutput.getFrame()
         # edgeRightFrame = edgeRight.getFrame()
         # edgeRgbFrame = edgeRgb.getFrame()
@@ -173,7 +163,7 @@ with dai.Device(pipeline) as device:
         count = 0
         positives = 0
         for contour in contourInfo:
-            frameSegment = monoFrame[contour['y_min']:contour['y_max'], contour['x_min']:contour['x_max']]
+            frameSegment = videoFrame[contour['y_min']:contour['y_max'], contour['x_min']:contour['x_max']]
             tags = detector.detect(frameSegment, estimate_tag_pose=True, camera_params=camera_params.values(), tag_size=0.2)
 
             if len(tags) > 0:
@@ -182,10 +172,10 @@ with dai.Device(pipeline) as device:
                     # Shift points since this is a snapshot
                     points[:, 0] += contour['x_min']
                     points[:, 1] += contour['y_min']
-                    cv2.polylines(monoFrame, [points], True, (120, 120, 120), 3)
+                    cv2.polylines(videoFrame, [points], True, (120, 120, 120), 3)
                     textX = min(points[:, 0])
                     textY = min(points[:, 1]) + 30
-                    cv2.putText(monoFrame, "tag_id: {}".format(tag.tag_id), (textX, textY), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
+                    cv2.putText(videoFrame, "tag_id: {}".format(tag.tag_id), (textX, textY), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
                     # TODO: Shift pose estimation by snapshot shift
 
@@ -200,10 +190,10 @@ with dai.Device(pipeline) as device:
         #     cv2.drawContours(edgeFrame, squares, -1, color=(255, 255, 255), thickness=cv2.FILLED)
 
         fps.nextIter()
-        cv2.putText(monoFrame, "{:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
+        cv2.putText(videoFrame, "{:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
         # Show the frame
-        cv2.imshow("mono", monoFrame)
+        cv2.imshow("mono", videoFrame)
         # cv2.imshow(edgeRightStr, edgeRightFrame)
         # cv2.imshow(edgeRgbStr, edgeRgbFrame)
 

@@ -39,7 +39,7 @@ sys.path.insert(1, parent_dir)
 import find_version
 
 # 3rdparty dependencies to install
-DEPENDENCIES = ['pyyaml', 'requests']
+DEPENDENCIES = ['pyyaml', 'requests', 'pupil_apriltags']
 requireOpenCv = True
 thisPlatform = platform.machine()
 if thisPlatform == "aarch64":
