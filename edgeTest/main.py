@@ -31,9 +31,10 @@ def main():
         log.error("CAMERA_TYPE not recognized \"{}\". Defaulting to RGB".format(CAMERA_TYPE))
 
     if CAMERA_TYPE == 'MONO':
-        pipeline, pipeline_info, camera_params = apriltag_pipeline.create_pipeline_mono()
+        pipeline, pipeline_info, camera_params = apriltag_pipeline.create_pipeline_mono_edge()
+        # pipeline, pipeline_info, camera_params = apriltag_pipeline.create_pipeline_mono()
     else:
-        pipeline, pipeline_info, camera_params = apriltag_pipeline.create_pipeline_rgb()
+        pipeline, pipeline_info, camera_params = apriltag_pipeline.create_pipeline_rgb_edge()
 
     detector = Detector(families='tag36h11',
                         nthreads=3,
@@ -61,6 +62,7 @@ def main():
             videoFrame = videoOutput.getFrame()
             edgeFrame = edgeOutput.getFrame()
 
+            # tags = detector.detect(videoFrame, estimate_tag_pose=True, camera_params=camera_params.values(), tag_size=0.2)
             tags = detector.detect(videoFrame, estimate_tag_pose=False, tag_size=0.2)
 
             if len(tags) > 0:

@@ -2,7 +2,7 @@
 import depthai as dai
 
 
-def create_pipeline_rgb():
+def create_pipeline_rgb_edge():
     # Create pipeline
     pipeline = dai.Pipeline()
 
@@ -64,7 +64,7 @@ def create_pipeline_rgb():
     return pipeline, pipeline_info, camera_params
 
 
-def create_pipeline_mono():
+def create_pipeline_mono_edge():
     pipeline = dai.Pipeline()
 
     # Define sources and outputs
@@ -103,6 +103,50 @@ def create_pipeline_mono():
         'videoQueue': videoStr,
         'edgeQueue': edgeStr,
         'edgeCfgQueue': edgeCfgStr
+    }
+
+    # # OAK-D Lite @ 480P
+    # camera_params = {
+    #     "fx": 0.00337,
+    #     "fY": 0.00337,
+    #     "cx": int(cam.getVideoWidth() / 2),
+    #     "cy": int(cam.getVideoHeight() / 2)
+    # }
+    # OAK-D Lite @ 800P
+    camera_params = {
+        "fx": 0.00337 * 1000,
+        "fY": 0.00337 * 1000,
+        "cx": int(cam.getResolutionWidth() / 2),
+        "cy": int(cam.getResolutionHeight() / 2)
+    }
+
+    return pipeline, pipeline_info, camera_params
+
+
+def create_pipeline_mono():
+    pipeline = dai.Pipeline()
+
+    # Define sources and outputs
+    cam = pipeline.create(dai.node.MonoCamera)
+
+    xoutMono = pipeline.create(dai.node.XLinkOut)
+
+    videoStr = "mono"
+
+    xoutMono.setStreamName(videoStr)
+
+    # Properties
+    cam.setBoardSocket(dai.CameraBoardSocket.LEFT)
+    cam.setResolution(dai.MonoCameraProperties.SensorResolution.THE_800_P)
+    cam.setFps(120)
+
+    # Linking
+    cam.out.link(xoutMono.input)
+
+    pipeline_info = {
+        'resolution_x': cam.getResolutionWidth(),
+        'resolution_y': cam.getResolutionHeight(),
+        'videoQueue': videoStr,
     }
 
     # # OAK-D Lite @ 480P
