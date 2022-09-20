@@ -2,6 +2,7 @@
 import cv2
 import depthai as dai
 import logging
+from networktables.util import NetworkTables
 import numpy as np
 
 from pupil_apriltags import Detector
@@ -10,6 +11,26 @@ import spatialCalculator_pipelines
 from common import utils
 
 log = logging.getLogger(__name__)
+
+
+def init_networktables():
+    NetworkTables.startClientTeam(4201)
+
+    if not NetworkTables.isConnected():
+        log.debug("Could not connect to team client. Trying other addresses...")
+        NetworkTables.startClient([
+            '10.42.1.2',
+            '127.0.0.1',
+            '10.0.0.2',
+            '192.168.100.108'
+        ])
+
+    if NetworkTables.isConnected():
+        log.debug("NT Connected to {}".format(NetworkTables.getRemoteAddress()))
+        return True
+    else:
+        log.error("Could not connect to NetworkTables. Restarting server...")
+        return False
 
 
 def main():
@@ -24,6 +45,8 @@ def main():
                         refine_edges=1,
                         decode_sharpening=0.25,
                         debug=0)
+
+    nt_tab = NetworkTables.getTable("DepthAI")
 
     fps = utils.FPSHandler()
 
@@ -84,6 +107,11 @@ def main():
                             detectedTag["spatialData"] = sortedSpatialData[dataCounter].spatialCoordinates
                             dataCounter += 1
 
+                        # Merge AprilTag mesurements to estimate
+                        avg_x = sum(detectedTag["spatialData"].x for detectedTag in detectedTags) / len(detectedTags)
+                        avg_y = sum(detectedTag["spatialData"].y for detectedTag in detectedTags) / len(detectedTags)
+                        avg_z = sum(detectedTag["spatialData"].z for detectedTag in detectedTags) / len(detectedTags)
+
                     for detectedTag in detectedTags:
                         points = detectedTag["tagCorners"].astype(np.int32)
                         # Shift points since this is a snapshot
@@ -102,6 +130,7 @@ def main():
                             cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["spatialData"].z / 1000), (textX, textY + 60), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                                         (120, 120, 120))
                             cv2.rectangle(frameRight, detectedTag["tagTopLeftXY"], detectedTag["tagBottomRightXY"], (0, 0, 0), 3)
+
 
                     # For each detected tag, generate a ROI to estimate depth to tag
                     if len(detectedTags) > 0:

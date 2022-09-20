@@ -44,6 +44,7 @@ def create_spaitalCalculator_pipeline():
     # StereoDepth
     stereo.setOutputDepth(outputDepth)
     stereo.setOutputRectified(outputRectified)
+    stereo.setDepthAlign(dai.RawStereoDepthConfig.AlgorithmControl.DepthAlign.RECTIFIED_RIGHT)
     stereo.setConfidenceThreshold(255)
 
     stereo.setLeftRightCheck(lrcheck)
