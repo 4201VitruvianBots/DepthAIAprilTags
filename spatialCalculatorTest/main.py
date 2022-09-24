@@ -1,3 +1,4 @@
+import argparse
 
 import cv2
 import depthai as dai
@@ -14,6 +15,14 @@ from calc import HostSpatialsCalc
 from common import constants
 from common import utils
 
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-d', dest='debug', action="store_true", default=False, help='Start in Debug Mode')
+parser.add_argument('-t', dest='test', action="store_true", default=False, help='Start in Test Mode')
+parser.add_argument('-c', dest='camera_type', action="store", type=str, default='RGB', help='Set camera type '
+                                                                                            '(RGB, MONO. Default: RGB)')
+
+args = parser.parse_args()
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +49,8 @@ def init_networktables():
 
 def main():
     log.info("Starting AprilTag Spatial Detector")
+
+    DISABLE_VIDEO_OUTPUT = args.test
 
     pipeline, pipeline_info = spatialCalculator_pipelines.create_spaitalCalculator_pipeline()
 
@@ -139,7 +150,7 @@ def main():
                                     0.6, (255, 255, 255))
 
                         # If we have spatial data, print it
-                        if "spatialData" in detectedTag.keys():
+                        if "spatialData" in detectedTag.keys() and not DISABLE_VIDEO_OUTPUT:
                             # cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["spatialData"].x / 1000), (textX, textY + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                             #             (120, 120, 120))
                             # cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["spatialData"].y / 1000), (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
@@ -159,10 +170,14 @@ def main():
             depthFrameColor = cv2.applyColorMap(depthFrameColor, cv2.COLORMAP_HOT)
 
             fps.nextIter()
-            cv2.putText(frameRight, "{:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
-            cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
-            cv2.imshow(pipeline_info["monoRightQueue"], frameRight)
+            if not DISABLE_VIDEO_OUTPUT:
+                cv2.putText(frameRight, "{:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
+
+                cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
+                cv2.imshow(pipeline_info["monoRightQueue"], frameRight)
+            else:
+                print("FPS TEST: {:.2f}".format(fps.fps()))
 
             key = cv2.waitKey(1)
             if key == ord('q'):
