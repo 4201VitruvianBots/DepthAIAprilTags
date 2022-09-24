@@ -24,10 +24,10 @@ def create_spaitalCalculator_pipeline():
     # MonoCamera
     monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
     monoLeft.setBoardSocket(dai.CameraBoardSocket.LEFT)
-    monoLeft.setFps(60)
+    monoLeft.setFps(120)
     monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
     monoRight.setBoardSocket(dai.CameraBoardSocket.RIGHT)
-    monoRight.setFps(60)
+    monoRight.setFps(120)
     monoRight.out.link(xoutRight.input)
 
     outputDepth = True

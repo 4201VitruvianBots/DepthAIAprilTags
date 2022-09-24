@@ -56,7 +56,7 @@ def main():
 
     detector = Detector(families='tag36h11',
                         nthreads=3,
-                        quad_decimate=1.0,
+                        quad_decimate=2.0,
                         quad_sigma=0.0,
                         refine_edges=1,
                         decode_sharpening=0.25,
@@ -90,6 +90,10 @@ def main():
 
         hostSpatials = HostSpatialsCalc(device)
 
+        # Precalculate this value to save some performance
+        horizontal_focal_length = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
+        vertical_focal_length = pipeline_info["resolution_y"] / (2 * math.tan(math.radians(camera_params['vfov']) / 2))
+
         while True:
             inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
             inRight = qRight.tryGet()
@@ -115,17 +119,13 @@ def main():
                         bottomRight.x = bottomRightXY[0] / frameRight.shape[1]
                         bottomRight.y = bottomRightXY[1] / frameRight.shape[0]
 
-                        horizontal_angle_radians = math.atan(
-                            (tag.center[0] - (frameRight.shape[1] / 2.0)) /
-                            (frameRight.shape[1] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))))
-                        vertical_angle_radians = -math.atan(
-                            (tag.center[1] - (frameRight.shape[0] / 2.0)) /
-                            (frameRight.shape[0] / (2 * math.tan(math.radians(camera_params['vfov']) / 2))))
+                        horizontal_angle_radians = math.atan((tag.center[0] - (frameRight.shape[1] / 2.0)) / horizontal_focal_length)
+                        vertical_angle_radians = -math.atan((tag.center[1] - (frameRight.shape[0] / 2.0)) / vertical_focal_length)
                         horizontal_angle_degrees = math.degrees(horizontal_angle_radians)
                         vertical_angle_degrees = math.degrees(vertical_angle_radians)
 
-                        spatialData, _ = hostSpatials.calc_spatials(depthFrame, tag.center.astype(int))
-
+                        # spatialData, _ = hostSpatials.calc_spatials(depthFrame, tag.center.astype(int))
+                        spatialData, _ = hostSpatials.calc_spatials(depthFrame, (topLeft.x, topLeft.y, bottomRight.x, bottomRight.y))
 
                         tagInfo = {
                             "Id": tag.tag_id,
