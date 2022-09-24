@@ -12,11 +12,11 @@ def estimate_robot_pose_from_apriltag(detectedTag, camera_params, frame_shape):
                                     detectedTag["spatialData"].z ** 2)
 
     horizontal_angle_radians = math.atan(
-        (detectedTag['tagCenter'].x - (frame_shape[0] / 2.0)) / (frame_shape[1] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))))
+        (detectedTag['tagCenter'][0] - (frame_shape[0] / 2.0)) / (frame_shape[0] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))))
     # horizontal_angle_offset = math.degrees(horizontal_angle_radians)
 
     vertical_angle_radians = math.atan(
-        (detectedTag['tagCenter'].x - (frame_shape[0] / 2.0)) / (frame_shape[1] / (2 * math.tan(math.radians(camera_params['vfov']) / 2))))
+        (detectedTag['tagCenter'][1] - (frame_shape[1] / 2.0)) / (frame_shape[1] / (2 * math.tan(math.radians(camera_params['vfov']) / 2))))
     # vertical_angle_offset = -math.degrees(vertical_angle_radians)
     horizontal_angle_radians -=math.pi
     vertical_angle_radians -=math.pi

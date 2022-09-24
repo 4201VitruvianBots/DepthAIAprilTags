@@ -3,12 +3,17 @@ import cv2
 import depthai as dai
 import logging
 from networktables.util import NetworkTables
+import math
 import numpy as np
 
 from pupil_apriltags import Detector
 
 import spatialCalculator_pipelines
+from calc import HostSpatialsCalc
+
+from common import constants
 from common import utils
+
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +41,7 @@ def init_networktables():
 def main():
     log.info("Starting AprilTag Spatial Detector")
 
-    pipeline, pipeline_info, camera_params = spatialCalculator_pipelines.create_spaitalCalculator_pipeline()
+    pipeline, pipeline_info = spatialCalculator_pipelines.create_spaitalCalculator_pipeline()
 
     detector = Detector(families='tag36h11',
                         nthreads=3,
@@ -50,20 +55,28 @@ def main():
 
     fps = utils.FPSHandler()
 
-    firstPass = True
-
     with dai.Device(pipeline) as device:
+        calibData = device.readCalibration()
+        boardName = calibData.getEepromData().productName
+
+        camera_params = {
+            "hfov": constants.CAMERA_PARAMS[boardName]["mono"]["hfov"],
+            "vfov": constants.CAMERA_PARAMS[boardName]["mono"]["vfov"]
+        }
+
+        device.setIrLaserDotProjectorBrightness(1200)
+        # device.setIrFloodLightBrightness(1500)
+
         depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=4, blocking=False)
-        spatialCalcQueue = device.getOutputQueue(name=pipeline_info["spatialDataQueue"], maxSize=4, blocking=False)
-        spatialCalcConfigInQueue = device.getInputQueue(pipeline_info["spatialConfigQueue"])
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
+
+        hostSpatials = HostSpatialsCalc(device)
 
         while True:
             inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
-            inDepthAvg = spatialCalcQueue.get()  # blocking call, will wait until a new data has arrived
             inRight = qRight.tryGet()
 
-            spatialData = inDepthAvg.getSpatialLocations()
+            depthFrame = inDepth.getFrame()
 
             if inRight is not None:
                 frameRight = inRight.getCvFrame()  # get mono right frame
@@ -84,36 +97,40 @@ def main():
                         bottomRight.x = bottomRightXY[0] / frameRight.shape[1]
                         bottomRight.y = bottomRightXY[1] / frameRight.shape[0]
 
+                        horizontal_angle_radians = math.atan(
+                            (tag.center[0] - (frameRight.shape[1] / 2.0)) /
+                            (frameRight.shape[1] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))))
+                        vertical_angle_radians = -math.atan(
+                            (tag.center[1] - (frameRight.shape[0] / 2.0)) /
+                            (frameRight.shape[0] / (2 * math.tan(math.radians(camera_params['vfov']) / 2))))
+                        horizontal_angle_degrees = math.degrees(horizontal_angle_radians)
+                        vertical_angle_degrees = math.degrees(vertical_angle_radians)
+
+                        spatialData, _ = hostSpatials.calc_spatials(depthFrame, tag.center.astype(int))
+
+
                         tagInfo = {
-                            "tagId": tag.tag_id,
-                            "tagCorners": tag.corners,
-                            "tagCenter": tag.center,
-                            "tagTopLeft": topLeft,
-                            "tagTopLeftXY": [int(i) for i in topLeftXY],
-                            "tagBottomRight": bottomRight,
-                            "tagBottomRightXY": [int(i) for i in bottomRightXY]
+                            "Id": tag.tag_id,
+                            "corners": tag.corners,
+                            "center": tag.center,
+                            "XAngle": horizontal_angle_degrees,
+                            "YAngle": vertical_angle_degrees,
+                            "topLeft": topLeft,
+                            "topLeftXY": [int(i) for i in topLeftXY],
+                            "bottomRight": bottomRight,
+                            "bottomRightXY": [int(i) for i in bottomRightXY],
+                            "spatialData": spatialData,
+                            "estimatedRobotPose": (0, 0, 0)
                         }
                         detectedTags.append(tagInfo)
 
-                    # Sort by center Y, then X coordinates to match with spatial data
-                    detectedTags = sorted(detectedTags, key=lambda k: [k["tagCenter"][1], k["tagCenter"][0]])
-
-                    # Only assign spatial data to tags after getting valid tags
-                    if len(spatialData) > 0 and len(spatialData) == len(detectedTags) and not firstPass:
-                        # Sort by center Y, then X coordinates to match with spatial Data
-                        sortedSpatialData = sorted(spatialData, key=lambda d: [d.spatialCoordinates.y, d.spatialCoordinates.x])
-                        dataCounter = 0
-                        for detectedTag in detectedTags:
-                            detectedTag["spatialData"] = sortedSpatialData[dataCounter].spatialCoordinates
-                            dataCounter += 1
-
-                        # Merge AprilTag mesurements to estimate
-                        avg_x = sum(detectedTag["spatialData"].x for detectedTag in detectedTags) / len(detectedTags)
-                        avg_y = sum(detectedTag["spatialData"].y for detectedTag in detectedTags) / len(detectedTags)
-                        avg_z = sum(detectedTag["spatialData"].z for detectedTag in detectedTags) / len(detectedTags)
+                    # Merge AprilTag measurements to estimate
+                    # avg_x = sum(detectedTag["estimatedRobotPose"][0] for detectedTag in detectedTags) / len(detectedTags)
+                    # avg_y = sum(detectedTag["estimatedRobotPose"][1] for detectedTag in detectedTags) / len(detectedTags)
+                    # avg_z = sum(detectedTag["estimatedRobotPose"][2] for detectedTag in detectedTags) / len(detectedTags)
 
                     for detectedTag in detectedTags:
-                        points = detectedTag["tagCorners"].astype(np.int32)
+                        points = detectedTag["corners"].astype(np.int32)
                         # Shift points since this is a snapshot
                         cv2.polylines(frameRight, [points], True, (120, 120, 120), 3)
                         textX = min(points[:, 0])
@@ -123,29 +140,20 @@ def main():
 
                         # If we have spatial data, print it
                         if "spatialData" in detectedTag.keys():
-                            cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["spatialData"].x / 1000), (textX, textY + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
+                            # cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["spatialData"].x / 1000), (textX, textY + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
+                            #             (120, 120, 120))
+                            # cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["spatialData"].y / 1000), (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
+                            #             (120, 120, 120))
+                            cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["XAngle"]),
+                                        (textX, textY + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                                         (120, 120, 120))
-                            cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["spatialData"].y / 1000), (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
+                            cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["YAngle"]),
+                                        (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                                         (120, 120, 120))
-                            cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["spatialData"].z / 1000), (textX, textY + 60), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
+                            cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["spatialData"]["z"] / 1000), (textX, textY + 60), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                                         (120, 120, 120))
-                            cv2.rectangle(frameRight, detectedTag["tagTopLeftXY"], detectedTag["tagBottomRightXY"], (0, 0, 0), 3)
+                            cv2.rectangle(frameRight, detectedTag["topLeftXY"], detectedTag["bottomRightXY"], (0, 0, 0), 3)
 
-
-                    # For each detected tag, generate a ROI to estimate depth to tag
-                    if len(detectedTags) > 0:
-                        cfg = dai.SpatialLocationCalculatorConfig()
-                        for detectedTag in detectedTags:
-                            config = dai.SpatialLocationCalculatorConfigData()
-                            config.depthThresholds.lowerThreshold = 100
-                            config.depthThresholds.upperThreshold = 10000
-                            config.roi = dai.Rect(detectedTag["tagTopLeft"], detectedTag["tagBottomRight"])
-                            cfg.addROI(config)
-
-                        spatialCalcConfigInQueue.send(cfg)
-                        firstPass = False
-
-            depthFrame = inDepth.getFrame()
             depthFrameColor = cv2.normalize(depthFrame, None, 255, 0, cv2.NORM_INF, cv2.CV_8UC1)
             depthFrameColor = cv2.equalizeHist(depthFrameColor)
             depthFrameColor = cv2.applyColorMap(depthFrameColor, cv2.COLORMAP_HOT)

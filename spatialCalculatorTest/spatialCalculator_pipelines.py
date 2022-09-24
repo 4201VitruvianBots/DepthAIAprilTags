@@ -1,6 +1,7 @@
 
 import depthai as dai
 
+
 def create_spaitalCalculator_pipeline():
     # Start defining a pipeline
     pipeline = dai.Pipeline()
@@ -9,31 +10,24 @@ def create_spaitalCalculator_pipeline():
     monoLeft = pipeline.createMonoCamera()
     monoRight = pipeline.createMonoCamera()
     stereo = pipeline.createStereoDepth()
-    spatialLocationCalculator = pipeline.createSpatialLocationCalculator()
 
     xoutDepth = pipeline.createXLinkOut()
-    xoutSpatialData = pipeline.createXLinkOut()
-    xinSpatialCalcConfig = pipeline.createXLinkIn()
     xoutRight = pipeline.createXLinkOut()
 
     depthStr = "depth"
-    spatialStr = "spatialData"
-    spatialCfgStr = "spatialCalcConfig"
     monoRightStr = "right"
 
     xoutDepth.setStreamName(depthStr)
-    xoutSpatialData.setStreamName(spatialStr)
-    xinSpatialCalcConfig.setStreamName(spatialCfgStr)
     xoutRight.setStreamName(monoRightStr)
 
 
     # MonoCamera
     monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
     monoLeft.setBoardSocket(dai.CameraBoardSocket.LEFT)
-    monoLeft.setFps(120)
+    monoLeft.setFps(60)
     monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
     monoRight.setBoardSocket(dai.CameraBoardSocket.RIGHT)
-    monoRight.setFps(120)
+    monoRight.setFps(60)
     monoRight.out.link(xoutRight.input)
 
     outputDepth = True
@@ -46,43 +40,21 @@ def create_spaitalCalculator_pipeline():
     stereo.setOutputRectified(outputRectified)
     stereo.setDepthAlign(dai.RawStereoDepthConfig.AlgorithmControl.DepthAlign.RECTIFIED_RIGHT)
     stereo.setConfidenceThreshold(255)
+    stereo.setRectifyEdgeFillColor(0)
+    stereo.setMedianFilter(dai.MedianFilter.KERNEL_7x7)
 
     stereo.setLeftRightCheck(lrcheck)
     stereo.setSubpixel(subpixel)
 
     monoLeft.out.link(stereo.left)
     monoRight.out.link(stereo.right)
-
-    spatialLocationCalculator.passthroughDepth.link(xoutDepth.input)
-    stereo.depth.link(spatialLocationCalculator.inputDepth)
-
-    topLeft = dai.Point2f(0.4, 0.4)
-    bottomRight = dai.Point2f(0.6, 0.6)
-
-    spatialLocationCalculator.setWaitForConfigInput(False)
-    config = dai.SpatialLocationCalculatorConfigData()
-    config.depthThresholds.lowerThreshold = 100
-    config.depthThresholds.upperThreshold = 10000
-    config.roi = dai.Rect(topLeft, bottomRight)
-    spatialLocationCalculator.initialConfig.addROI(config)
-    spatialLocationCalculator.out.link(xoutSpatialData.input)
-    xinSpatialCalcConfig.out.link(spatialLocationCalculator.inputConfig)
+    stereo.depth.link(xoutDepth.input)
 
     pipeline_info = {
         'resolution_x': monoRight.getResolutionWidth(),
         'resolution_y': monoRight.getResolutionHeight(),
         'depthQueue': depthStr,
-        'spatialDataQueue': spatialStr,
-        'spatialConfigQueue': spatialCfgStr,
         'monoRightQueue': monoRightStr
     }
 
-    # OAK-D Lite Mono @480P
-    camera_params = {
-        # "fx": 0.00337,
-        # "fY": 0.00337,
-        # "cx": int(cam.getVideoWidth() / 2),
-        # "cy": int(cam.getVideoHeight() / 2)
-    }
-
-    return pipeline, pipeline_info, camera_params
+    return pipeline, pipeline_info
