@@ -20,16 +20,17 @@ class FPS_Test:
         self.fps = utils.FPSHandler()
 
         self.readThread = threading.Thread(target=self.read)
-        self.writeThread = threading.Thread(target=self.write)
+        # self.writeThread = threading.Thread(target=self.write)
 
         self.readThread.start()
-        self.writeThread.start()
+        # self.writeThread.start()
+        self.write()
 
     def read(self):
         with dai.Device(self.pipeline) as device:
-            print("USB SPEED: {}".format(device.getUsbSpeed()))
+            self.log.info("USB SPEED: {}".format(device.getUsbSpeed()))
             if device.getUsbSpeed() not in [dai.UsbSpeed.SUPER, dai.UsbSpeed.SUPER_PLUS]:
-                print("WARNING: USB Speed is set to USB 2.0")
+                self.log.warning("WARNING: USB Speed is set to USB 2.0")
 
             depthQueue = device.getOutputQueue(name=self.pipeline_info["depthQueue"], maxSize=4, blocking=False)
             qRight = device.getOutputQueue(name=self.pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
