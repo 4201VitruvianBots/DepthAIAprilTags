@@ -20,11 +20,10 @@ class FPS_Test:
         self.fps = utils.FPSHandler()
 
         self.readThread = threading.Thread(target=self.read)
-        # self.writeThread = threading.Thread(target=self.write)
+        self.writeThread = threading.Thread(target=self.write)
 
         self.readThread.start()
-        # self.writeThread.start()
-        self.write()
+        self.writeThread.start()
 
     def read(self):
         with dai.Device(self.pipeline) as device:
