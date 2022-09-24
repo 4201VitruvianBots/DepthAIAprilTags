@@ -68,11 +68,18 @@ def main():
 
     with dai.Device(pipeline) as device:
         calibData = device.readCalibration()
-        boardName = calibData.getEepromData().productName
+        productName = calibData.getEepromData().productName
+        if len(productName) == 0:
+            boardName = calibData.getEepromData().boardName
+            if boardName == 'BW1098OBC':
+                productName = 'OAK-D'
+            else:
+                log.warning("Product name could not be determined. Defaulting to OAK-D")
+                productName = 'OAK-D'
 
         camera_params = {
-            "hfov": constants.CAMERA_PARAMS[boardName]["mono"]["hfov"],
-            "vfov": constants.CAMERA_PARAMS[boardName]["mono"]["vfov"]
+            "hfov": constants.CAMERA_PARAMS[productName]["mono"]["hfov"],
+            "vfov": constants.CAMERA_PARAMS[productName]["mono"]["vfov"]
         }
 
         device.setIrLaserDotProjectorBrightness(1200)
