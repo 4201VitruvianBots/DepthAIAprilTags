@@ -73,6 +73,10 @@ def main():
     fps = utils.FPSHandler()
 
     with dai.Device(pipeline) as device:
+        log.info("USB SPEED: {}".format(device.getUsbSpeed()))
+        if device.getUsbSpeed() not in [dai.UsbSpeed.SUPER, dai.UsbSpeed.SUPER_PLUS]:
+            log.warning("USB Speed is set to USB 2.0")
+
         calibData = device.readCalibration()
         productName = calibData.getEepromData().productName
         if len(productName) == 0:

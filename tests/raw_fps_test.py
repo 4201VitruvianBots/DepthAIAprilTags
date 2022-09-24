@@ -12,6 +12,10 @@ def main():
     fps = utils.FPSHandler()
 
     with dai.Device(pipeline) as device:
+        print("USB SPEED: {}".format(device.getUsbSpeed()))
+        if device.getUsbSpeed() not in [dai.UsbSpeed.SUPER, dai.UsbSpeed.SUPER_PLUS]:
+            print("WARNING: USB Speed is set to USB 2.0")
+
         depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=4, blocking=False)
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
 
