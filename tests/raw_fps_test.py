@@ -1,44 +1,66 @@
 import cv2
 import depthai as dai
 import numpy as np
+import queue
+import threading
 
 from common import utils
 from spatialCalculatorTest import spatialCalculator_pipelines
 
 
-def main():
+class FPS_Test:
+    def __init__(self):
+        self.pipeline, self.pipeline_info = spatialCalculator_pipelines.create_spaitalCalculator_pipeline()
 
-    pipeline, pipeline_info = spatialCalculator_pipelines.create_spaitalCalculator_pipeline()
+        self.pipeline.setXLinkChunkSize(0)
+        self.frame_queue = queue.Queue()
+        self.fps = utils.FPSHandler()
 
-    pipeline.setXLinkChunkSize(0)
+        self.readThread = threading.Thread(target=self.read)
+        self.writeThread = threading.Thread(target=self.write)
 
-    fps = utils.FPSHandler()
+        self.readThread.start()
+        self.writeThread.start()
 
-    with dai.Device(pipeline) as device:
-        print("USB SPEED: {}".format(device.getUsbSpeed()))
-        if device.getUsbSpeed() not in [dai.UsbSpeed.SUPER, dai.UsbSpeed.SUPER_PLUS]:
-            print("WARNING: USB Speed is set to USB 2.0")
+    def read(self):
+        with dai.Device(self.pipeline) as device:
+            print("USB SPEED: {}".format(device.getUsbSpeed()))
+            if device.getUsbSpeed() not in [dai.UsbSpeed.SUPER, dai.UsbSpeed.SUPER_PLUS]:
+                print("WARNING: USB Speed is set to USB 2.0")
 
-        depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=4, blocking=False)
-        qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
+            depthQueue = device.getOutputQueue(name=self.pipeline_info["depthQueue"], maxSize=4, blocking=False)
+            qRight = device.getOutputQueue(name=self.pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
 
+            while True:
+                try:
+                    inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
+                    inRight = qRight.tryGet()
+
+                    depthFrame = inDepth.getFrame()
+                    self.frame_queue.put(inRight)
+                except Exception as e:
+                    print("WARMING: FRAME SKIP")
+
+    def write(self):
         diffs = np.array([])
         while True:
-            inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
-            inRight = qRight.tryGet()
+            while not self.frame_queue.empty():
+                inRight = self.frame_queue.get()
+                self.fps.nextIter()
+                latencyMs = (dai.Clock.now() - inRight.getTimestamp()).total_seconds() * 1000
+                diffs = np.append(diffs, latencyMs)
 
-            depthFrame = inDepth.getFrame()
+                print("FPS: {:.2f}\tLatency: {:.2f} ms\t Avg. Latency: {:.2f} ms\t Latency Std: {:.2f}".format(self.fps.fps(),
+                                                                                                               latencyMs,
+                                                                                                               np.average(
+                                                                                                                   diffs),
+                                                                                                               np.std(
+                                                                                                                   diffs)))
 
-            fps.nextIter()
-            latencyMs = (dai.Clock.now() - inRight.getTimestamp()).total_seconds() * 1000
-            diffs = np.append(diffs, latencyMs)
-
-            print("FPS: {:.2f}\tLatency: {:.2f} ms\t Avg. Latency: {:.2f} ms\t Latency Std: {:.2f}".format(fps.fps(), latencyMs, np.average(diffs), np.std(diffs)))
-
-            key = cv2.waitKey(1)
-            if key == ord('q'):
-                break
+                key = cv2.waitKey(1)
+                if key == ord('q'):
+                    break
 
 
 if __name__ == '__main__':
-    main()
+    FPS_Test()
