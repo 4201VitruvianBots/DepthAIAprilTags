@@ -19,8 +19,14 @@ from common import utils
 parser = argparse.ArgumentParser()
 parser.add_argument('-d', dest='debug', action="store_true", default=False, help='Start in Debug Mode')
 parser.add_argument('-t', dest='test', action="store_true", default=False, help='Start in Test Mode')
-parser.add_argument('-c', dest='camera_type', action="store", type=str, default='RGB', help='Set camera type '
-                                                                                            '(RGB, MONO. Default: RGB)')
+
+parser.add_argument('-f', dest='family', action="store", type=str, default='tag36h11', help='Tag family (default: tag36h11)')
+parser.add_argument('-nt', dest='nthreads', action="store", type=int, default=3, help='nthreads (default: 3)')
+parser.add_argument('-qd', dest='quad_decimate', action="store", type=float, default=4.0, help='quad_decimate (default: 4)')
+parser.add_argument('-qs', dest='quad_sigma', action="store", type=float, default=0.0, help='quad_sigma (default: 0.0)')
+parser.add_argument('-re', dest='refine_edges', action="store", type=float, default=1.0, help='refine_edges (default: 1.0)')
+parser.add_argument('-ds', dest='decode_sharpening', action="store", type=float, default=0.25, help='decode_sharpening (default: 0.25)')
+parser.add_argument('-dd', dest='detector_debug', action="store", type=int, default=0, help='AprilTag Detector debug mode (default: 0)')
 
 args = parser.parse_args()
 
@@ -54,13 +60,13 @@ def main():
 
     pipeline, pipeline_info = spatialCalculator_pipelines.create_spaitalCalculator_pipeline()
 
-    detector = Detector(families='tag36h11',
-                        nthreads=3,
-                        quad_decimate=2.0,
-                        quad_sigma=0.0,
-                        refine_edges=1,
-                        decode_sharpening=0.25,
-                        debug=0)
+    detector = Detector(families=args.family,
+                        nthreads=args.nthreads,
+                        quad_decimate=args.quad_decimate,
+                        quad_sigma=args.quad_sigma,
+                        refine_edges=args.refine_edges,
+                        decode_sharpening=args.decode_sharpening,
+                        debug=args.detector_debug)
 
     nt_tab = NetworkTables.getTable("DepthAI")
 
@@ -112,8 +118,8 @@ def main():
                         bottomRight = dai.Point2f(0.6, 0.6)
                         # Frame.size(Y, X)
                         # tag.corners (X, Y)
-                        topLeftXY = (min(tag.corners[:, 0]), min(tag.corners[:, 1]))
-                        bottomRightXY = (max(tag.corners[:, 0]), max(tag.corners[:, 1]))
+                        topLeftXY = (int(min(tag.corners[:, 0])), int(min(tag.corners[:, 1])))
+                        bottomRightXY = (int(max(tag.corners[:, 0])), int(max(tag.corners[:, 1])))
                         topLeft.x = topLeftXY[0] / frameRight.shape[1]
                         topLeft.y = topLeftXY[1] / frameRight.shape[0]
                         bottomRight.x = bottomRightXY[0] / frameRight.shape[1]
@@ -125,7 +131,7 @@ def main():
                         vertical_angle_degrees = math.degrees(vertical_angle_radians)
 
                         # spatialData, _ = hostSpatials.calc_spatials(depthFrame, tag.center.astype(int))
-                        spatialData, _ = hostSpatials.calc_spatials(depthFrame, (topLeft.x, topLeft.y, bottomRight.x, bottomRight.y))
+                        spatialData, _ = hostSpatials.calc_spatials(depthFrame, (topLeftXY[0], topLeftXY[1], bottomRightXY[0], bottomRightXY[1]))
 
                         tagInfo = {
                             "Id": tag.tag_id,
@@ -134,9 +140,9 @@ def main():
                             "XAngle": horizontal_angle_degrees,
                             "YAngle": vertical_angle_degrees,
                             "topLeft": topLeft,
-                            "topLeftXY": [int(i) for i in topLeftXY],
+                            "topLeftXY": topLeftXY,
                             "bottomRight": bottomRight,
-                            "bottomRightXY": [int(i) for i in bottomRightXY],
+                            "bottomRightXY": bottomRightXY,
                             "spatialData": spatialData,
                             "estimatedRobotPose": (0, 0, 0)
                         }
