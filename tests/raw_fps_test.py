@@ -24,6 +24,7 @@ class FPS_Test:
 
         self.readThread.start()
         self.writeThread.start()
+        # self.write()
 
     def read(self):
         with dai.Device(self.pipeline) as device:
@@ -53,7 +54,7 @@ class FPS_Test:
                 latencyMs = (dai.Clock.now() - inRight.getTimestamp()).total_seconds() * 1000
                 diffs = np.append(diffs, latencyMs)
 
-                self.log.info("FPS: {:.2f}\tLatency: {:.2f} ms\t Avg. Latency: {:.2f} ms\t Latency Std: {:.2f}".format(self.fps.fps(),
+                print("FPS: {:.2f}\tLatency: {:.2f} ms\t Avg. Latency: {:.2f} ms\t Latency Std: {:.2f}".format(self.fps.fps(),
                                                                                                                latencyMs,
                                                                                                                np.average(
                                                                                                                    diffs),
@@ -63,6 +64,8 @@ class FPS_Test:
                 key = cv2.waitKey(1)
                 if key == ord('q'):
                     break
+
+        print("Exiting write")
 
 
 if __name__ == '__main__':
