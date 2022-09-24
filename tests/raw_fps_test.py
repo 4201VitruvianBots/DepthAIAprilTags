@@ -1,5 +1,6 @@
 import cv2
 import depthai as dai
+import logging
 import numpy as np
 import queue
 import threading
@@ -10,6 +11,8 @@ from spatialCalculatorTest import spatialCalculator_pipelines
 
 class FPS_Test:
     def __init__(self):
+        self.log = logging.getLogger(__name__)
+
         self.pipeline, self.pipeline_info = spatialCalculator_pipelines.create_spaitalCalculator_pipeline()
 
         self.pipeline.setXLinkChunkSize(0)
@@ -39,7 +42,7 @@ class FPS_Test:
                     depthFrame = inDepth.getFrame()
                     self.frame_queue.put(inRight)
                 except Exception as e:
-                    print("WARMING: FRAME SKIP")
+                    self.log.warning("WARMING: FRAME SKIP")
 
     def write(self):
         diffs = np.array([])
@@ -50,7 +53,7 @@ class FPS_Test:
                 latencyMs = (dai.Clock.now() - inRight.getTimestamp()).total_seconds() * 1000
                 diffs = np.append(diffs, latencyMs)
 
-                print("FPS: {:.2f}\tLatency: {:.2f} ms\t Avg. Latency: {:.2f} ms\t Latency Std: {:.2f}".format(self.fps.fps(),
+                self.log.info("FPS: {:.2f}\tLatency: {:.2f} ms\t Avg. Latency: {:.2f} ms\t Latency Std: {:.2f}".format(self.fps.fps(),
                                                                                                                latencyMs,
                                                                                                                np.average(
                                                                                                                    diffs),
