@@ -42,14 +42,14 @@ def init_networktables():
     if not NetworkTables.isConnected():
         log.debug("Could not connect to team client. Trying other addresses...")
         NetworkTables.startClient([
-            '10.42.1.2',
-            '127.0.0.1',
-            '10.0.0.2',
-            '192.168.100.108'
+            # '10.42.1.2',
+            # '127.0.0.1',
+            # '10.0.0.2',
+            '192.168.100.25'
         ])
 
     if NetworkTables.isConnected():
-        log.debug("NT Connected to {}".format(NetworkTables.getRemoteAddress()))
+        log.info("NT Connected to {}".format(NetworkTables.getRemoteAddress()))
         return True
     else:
         log.error("Could not connect to NetworkTables. Restarting server...")
@@ -71,6 +71,7 @@ def main():
                         decode_sharpening=args.decode_sharpening,
                         debug=args.detector_debug)
 
+    init_networktables()
     nt_tab = NetworkTables.getTable("DepthAI")
 
     fps = utils.FPSHandler()
@@ -124,6 +125,7 @@ def main():
                     x_pos = []
                     y_pos = []
                     z_pos = []
+                    pose_id = []
                     for tag in tags:
                         topLeftXY = (int(min(tag.corners[:, 0])), int(min(tag.corners[:, 1])))
                         bottomRightXY = (int(max(tag.corners[:, 0])), int(max(tag.corners[:, 1])))
@@ -131,6 +133,9 @@ def main():
                         spatialData, _ = hostSpatials.calc_spatials(depthFrame, (topLeftXY[0], topLeftXY[1], bottomRightXY[0], bottomRightXY[1]))
 
                         robotPose, tagTranslation = spatialCalculator.estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, frameRight.shape)
+
+                        if robotPose is None:
+                            continue
 
                         tagInfo = {
                             "id": tag.tag_id,
@@ -148,6 +153,7 @@ def main():
                         x_pos.append(robotPose['x'])
                         y_pos.append(robotPose['y'])
                         z_pos.append(robotPose['z'])
+                        pose_id.append(tag.tag_id)
                         log.info("Tag ID: {}\tCenter: {}\tz: {}".format(tag.tag_id, tag.center, spatialData['z']))
 
                     # Merge AprilTag measurements to estimate
@@ -157,6 +163,11 @@ def main():
                     if len(detectedTags) > 1:
                         log.info("Estimated Pose X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(avg_x, avg_y, avg_z))
                         log.info("Std dev X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(np.std(x_pos), np.std(y_pos), np.std(z_pos)))
+
+                    nt_tab.putNumberArray("Pose ID", pose_id)
+                    nt_tab.putNumberArray("X Poses", x_pos)
+                    nt_tab.putNumberArray("Y Poses", y_pos)
+                    nt_tab.putNumberArray("Z Poses", z_pos)
 
                     for detectedTag in detectedTags:
                         points = detectedTag["corners"].astype(np.int32)
@@ -176,8 +187,14 @@ def main():
                             cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["translation"]['y']),
                                         (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                                         (255, 255, 255))
-                            cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["translation"]['z']),
+                            cv2.putText(frameRight, "x angle: {:.2f}".format(detectedTag["translation"]['x_angle']),
                                         (textX, textY + 60), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
+                                        (255, 255, 255))
+                            cv2.putText(frameRight, "y angle: {:.2f}".format(detectedTag["translation"]['y_angle']),
+                                        (textX, textY + 80), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
+                                        (255, 255, 255))
+                            cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["translation"]['z']),
+                                        (textX, textY + 100), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                                         (255, 255, 255))
                             cv2.rectangle(frameRight, detectedTag["topLeftXY"], detectedTag["bottomRightXY"],
                                           (0, 0, 0), 3)
@@ -185,6 +202,7 @@ def main():
             fps.nextIter()
 
             if not DISABLE_VIDEO_OUTPUT:
+                cv2.circle(frameRight, (int(frameRight.shape[1] / 2), int(frameRight.shape[0] / 2)), 1, (255, 255, 255), 1)
                 cv2.putText(frameRight, "{:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
                 cv2.imshow(pipeline_info["monoRightQueue"], frameRight)

@@ -81,12 +81,12 @@ def estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, frame_sha
     horizontal_angle_degrees = math.degrees(horizontal_angle_radians)
     vertical_angle_degrees = math.degrees(vertical_angle_radians)
 
-    xy_target_distance = math.cos(camera_params['mount_angle_radians'] + vertical_angle_degrees) * spatialData['z']
+    xy_target_distance = math.cos(camera_params['mount_angle_radians'] + vertical_angle_radians) * spatialData['z']
 
     # Calculate the translation from the camera to the tag, in field coordinates
     tag_translation = {
         'x': math.cos(horizontal_angle_radians) * xy_target_distance,
-        'y': math.sin(horizontal_angle_radians) * xy_target_distance,
+        'y': -math.sin(horizontal_angle_radians) * xy_target_distance,
         'z': math.sin(camera_params['mount_angle_radians'] + vertical_angle_radians) * spatialData['z'],
         'x_angle': horizontal_angle_degrees,
         'y_angle': vertical_angle_degrees
