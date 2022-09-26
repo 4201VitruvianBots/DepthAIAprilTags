@@ -9,12 +9,12 @@ import numpy as np
 
 from pupil_apriltags import Detector
 
+import spatialCalculator
 import spatialCalculator_pipelines
-from calc import HostSpatialsCalc
+from spatialCalculator import HostSpatialsCalc
 
 from common import constants
 from common import utils
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-d', dest='debug', action="store_true", default=False, help='Start in Debug Mode')
@@ -31,6 +31,9 @@ parser.add_argument('-dd', dest='detector_debug', action="store", type=int, defa
 args = parser.parse_args()
 
 log = logging.getLogger(__name__)
+c_handler = logging.StreamHandler()
+log.addHandler(c_handler)
+log.setLevel(logging.INFO)
 
 
 def init_networktables():
@@ -89,7 +92,8 @@ def main():
 
         camera_params = {
             "hfov": constants.CAMERA_PARAMS[productName]["mono"]["hfov"],
-            "vfov": constants.CAMERA_PARAMS[productName]["mono"]["vfov"]
+            "vfov": constants.CAMERA_PARAMS[productName]["mono"]["vfov"],
+            "mount_angle_radians": math.radians(constants.CAMERA_MOUNT_ANGLE)
         }
 
         device.setIrLaserDotProjectorBrightness(1200)
@@ -101,8 +105,8 @@ def main():
         hostSpatials = HostSpatialsCalc(device)
 
         # Precalculate this value to save some performance
-        horizontal_focal_length = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
-        vertical_focal_length = pipeline_info["resolution_y"] / (2 * math.tan(math.radians(camera_params['vfov']) / 2))
+        camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
+        camera_params["vfl"] = pipeline_info["resolution_y"] / (2 * math.tan(math.radians(camera_params['vfov']) / 2))
 
         while True:
             inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
@@ -117,45 +121,42 @@ def main():
 
                 if len(tags) > 0:
                     detectedTags = []
+                    x_pos = []
+                    y_pos = []
+                    z_pos = []
                     for tag in tags:
-                        topLeft = dai.Point2f(0.4, 0.4)
-                        bottomRight = dai.Point2f(0.6, 0.6)
-                        # Frame.size(Y, X)
-                        # tag.corners (X, Y)
                         topLeftXY = (int(min(tag.corners[:, 0])), int(min(tag.corners[:, 1])))
                         bottomRightXY = (int(max(tag.corners[:, 0])), int(max(tag.corners[:, 1])))
-                        topLeft.x = topLeftXY[0] / frameRight.shape[1]
-                        topLeft.y = topLeftXY[1] / frameRight.shape[0]
-                        bottomRight.x = bottomRightXY[0] / frameRight.shape[1]
-                        bottomRight.y = bottomRightXY[1] / frameRight.shape[0]
 
-                        horizontal_angle_radians = math.atan((tag.center[0] - (frameRight.shape[1] / 2.0)) / horizontal_focal_length)
-                        vertical_angle_radians = -math.atan((tag.center[1] - (frameRight.shape[0] / 2.0)) / vertical_focal_length)
-                        horizontal_angle_degrees = math.degrees(horizontal_angle_radians)
-                        vertical_angle_degrees = math.degrees(vertical_angle_radians)
-
-                        # spatialData, _ = hostSpatials.calc_spatials(depthFrame, tag.center.astype(int))
                         spatialData, _ = hostSpatials.calc_spatials(depthFrame, (topLeftXY[0], topLeftXY[1], bottomRightXY[0], bottomRightXY[1]))
 
+                        robotPose, tagTranslation = spatialCalculator.estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, frameRight.shape)
+
                         tagInfo = {
-                            "Id": tag.tag_id,
+                            "id": tag.tag_id,
                             "corners": tag.corners,
                             "center": tag.center,
-                            "XAngle": horizontal_angle_degrees,
-                            "YAngle": vertical_angle_degrees,
-                            "topLeft": topLeft,
+                            "XAngle": tagTranslation['x_angle'],
+                            "YAngle": tagTranslation['y_angle'],
                             "topLeftXY": topLeftXY,
-                            "bottomRight": bottomRight,
                             "bottomRightXY": bottomRightXY,
                             "spatialData": spatialData,
-                            "estimatedRobotPose": (0, 0, 0)
+                            "translation": tagTranslation,
+                            "estimatedRobotPose": robotPose
                         }
                         detectedTags.append(tagInfo)
+                        x_pos.append(robotPose['x'])
+                        y_pos.append(robotPose['y'])
+                        z_pos.append(robotPose['z'])
+                        log.info("Tag ID: {}\tCenter: {}\tz: {}".format(tag.tag_id, tag.center, spatialData['z']))
 
                     # Merge AprilTag measurements to estimate
-                    # avg_x = sum(detectedTag["estimatedRobotPose"][0] for detectedTag in detectedTags) / len(detectedTags)
-                    # avg_y = sum(detectedTag["estimatedRobotPose"][1] for detectedTag in detectedTags) / len(detectedTags)
-                    # avg_z = sum(detectedTag["estimatedRobotPose"][2] for detectedTag in detectedTags) / len(detectedTags)
+                    avg_x = sum(x_pos) / len(x_pos)
+                    avg_y = sum(y_pos) / len(y_pos)
+                    avg_z = sum(z_pos) / len(z_pos)
+                    if len(detectedTags) > 1:
+                        log.info("Estimated Pose X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(avg_x, avg_y, avg_z))
+                        log.info("Std dev X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(np.std(x_pos), np.std(y_pos), np.std(z_pos)))
 
                     for detectedTag in detectedTags:
                         points = detectedTag["corners"].astype(np.int32)
@@ -163,36 +164,36 @@ def main():
                         cv2.polylines(frameRight, [points], True, (120, 120, 120), 3)
                         textX = min(points[:, 0])
                         textY = min(points[:, 1]) + 20
-                        cv2.putText(frameRight, "tag_id: {}".format(tag.tag_id), (textX, textY), cv2.FONT_HERSHEY_TRIPLEX,
-                                    0.6, (255, 255, 255))
+                        cv2.putText(frameRight, "tag_id: {}".format(detectedTag['id']),
+                                    (textX, textY), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
+                                    (255, 255, 255))
 
                         # If we have spatial data, print it
                         if "spatialData" in detectedTag.keys() and not DISABLE_VIDEO_OUTPUT:
-                            # cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["spatialData"].x / 1000), (textX, textY + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
-                            #             (120, 120, 120))
-                            # cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["spatialData"].y / 1000), (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
-                            #             (120, 120, 120))
-                            cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["XAngle"]),
+                            cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["translation"]['x']),
                                         (textX, textY + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
-                                        (120, 120, 120))
-                            cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["YAngle"]),
+                                        (255, 255, 255))
+                            cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["translation"]['y']),
                                         (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
-                                        (120, 120, 120))
-                            cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["spatialData"]["z"] / 1000), (textX, textY + 60), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
-                                        (120, 120, 120))
-                            cv2.rectangle(frameRight, detectedTag["topLeftXY"], detectedTag["bottomRightXY"], (0, 0, 0), 3)
-
-            depthFrameColor = cv2.normalize(depthFrame, None, 255, 0, cv2.NORM_INF, cv2.CV_8UC1)
-            depthFrameColor = cv2.equalizeHist(depthFrameColor)
-            depthFrameColor = cv2.applyColorMap(depthFrameColor, cv2.COLORMAP_HOT)
+                                        (255, 255, 255))
+                            cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["translation"]['z']),
+                                        (textX, textY + 60), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
+                                        (255, 255, 255))
+                            cv2.rectangle(frameRight, detectedTag["topLeftXY"], detectedTag["bottomRightXY"],
+                                          (0, 0, 0), 3)
 
             fps.nextIter()
 
             if not DISABLE_VIDEO_OUTPUT:
                 cv2.putText(frameRight, "{:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
-                cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
                 cv2.imshow(pipeline_info["monoRightQueue"], frameRight)
+
+                depthFrameColor = cv2.normalize(depthFrame, None, 255, 0, cv2.NORM_INF, cv2.CV_8UC1)
+                depthFrameColor = cv2.equalizeHist(depthFrameColor)
+                depthFrameColor = cv2.applyColorMap(depthFrameColor, cv2.COLORMAP_HOT)
+
+                cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
             else:
                 print("FPS TEST: {:.2f}".format(fps.fps()))
 
@@ -202,4 +203,5 @@ def main():
 
 
 if __name__ == '__main__':
+    log.info("Starting AprilTag SpatialCalculator")
     main()

@@ -20,7 +20,6 @@ def create_spaitalCalculator_pipeline():
     xoutDepth.setStreamName(depthStr)
     xoutRight.setStreamName(monoRightStr)
 
-
     # MonoCamera
     monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
     monoLeft.setBoardSocket(dai.CameraBoardSocket.LEFT)

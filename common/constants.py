@@ -2,6 +2,10 @@
 TAG_SIZE_M = 0.2
 PADDING_PERCENTAGE = 0.31
 
+
+CAMERA_MOUNT_ANGLE = 0.0
+CAMERA_MOUNT_HEIGHT = 0.0
+
 CAMERA_PARAMS = {
     "OAK-D": {
         "rgb": {
@@ -94,9 +98,45 @@ CAMERA_PARAMS = {
     }
 }
 
-# TAG_DICTIONARY = {
-#     0: {
-#         "name": "test"
-#         "pose": (0, 0, 0)
-#     }
-# }
+TAG_DICTIONARY = {
+    0: {
+        "name": "test",
+        "pose": {
+            'x': 0,
+            'y': 0,
+            'z': 0,
+        }
+    },
+    1: {
+        "name": "test",
+        "pose": {
+            'x': 2.930525,
+            'y': 2.921,
+            'z': 1.8669,
+        }
+    },
+    2: {
+        "name": "test",
+        "pose": {
+            'x': 3.2512,
+            'y': 2.0193,
+            'z': 1.72085,
+        }
+    },
+    3: {
+        "name": "test",
+        "pose": {
+            'x': 2.62255,
+            'y': 2.921,
+            'z': 1.343025,
+        }
+    },
+    4: {
+        "name": "test",
+        "pose": {
+            'x': 3.2512,
+            'y': 2.05105,
+            'z': 1.46685,
+        }
+    },
+}

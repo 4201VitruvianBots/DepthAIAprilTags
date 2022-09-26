@@ -2,6 +2,8 @@ import math
 import numpy as np
 import depthai as dai
 
+from common.constants import TAG_DICTIONARY
+
 
 class HostSpatialsCalc:
     # We need device object to get calibration data
@@ -38,7 +40,7 @@ class HostSpatialsCalc:
 
     # roi has to be list of ints
     def calc_spatials(self, depthFrame, roi, averaging_method=np.mean):
-        roi = self._check_input(roi, depthFrame)  # If point was passed, convert it to ROI
+        # roi = self._check_input(roi, depthFrame)  # If point was passed, convert it to ROI
         xmin, ymin, xmax, ymax = roi
 
         # Calculate the average depth in the ROI.
@@ -61,8 +63,39 @@ class HostSpatialsCalc:
         angle_y = self._calc_angle(depthFrame, bb_y_pos)
 
         spatials = {
-            'z': averageDepth,
-            'x': averageDepth * math.tan(angle_x),
-            'y': -averageDepth * math.tan(angle_y)
+            'z': averageDepth / 1000,
+            'x': averageDepth * math.tan(angle_x) / 1000,
+            'y': -averageDepth * math.tan(angle_y) / 1000
         }
         return spatials, centroid
+
+
+def estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, frame_shape):
+    if tag.tag_id not in TAG_DICTIONARY.keys():
+        return None, None
+
+    tagPose = TAG_DICTIONARY[tag.tag_id]["pose"]
+
+    horizontal_angle_radians = math.atan((tag.center[0] - (frame_shape[1] / 2.0)) / camera_params["hfl"])
+    vertical_angle_radians = -math.atan((tag.center[1] - (frame_shape[0] / 2.0)) / camera_params["vfl"])
+    horizontal_angle_degrees = math.degrees(horizontal_angle_radians)
+    vertical_angle_degrees = math.degrees(vertical_angle_radians)
+
+    xy_target_distance = math.cos(camera_params['mount_angle_radians'] + vertical_angle_degrees) * spatialData['z']
+
+    # Calculate the translation from the camera to the tag, in field coordinates
+    tag_translation = {
+        'x': math.cos(horizontal_angle_radians) * xy_target_distance,
+        'y': math.sin(horizontal_angle_radians) * xy_target_distance,
+        'z': math.sin(camera_params['mount_angle_radians'] + vertical_angle_radians) * spatialData['z'],
+        'x_angle': horizontal_angle_degrees,
+        'y_angle': vertical_angle_degrees
+    }
+
+    robotPose = {
+        'x': tagPose['x'] - tag_translation['x'],
+        'y': tagPose['y'] - tag_translation['y'],
+        'z': tagPose['z'] - tag_translation['z']
+    }
+
+    return robotPose, tag_translation
