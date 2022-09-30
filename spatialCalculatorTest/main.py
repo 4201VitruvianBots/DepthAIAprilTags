@@ -103,11 +103,11 @@ def main():
         depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=4, blocking=False)
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
 
-        hostSpatials = HostSpatialsCalc(device)
-
         # Precalculate this value to save some performance
         camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
         camera_params["vfl"] = pipeline_info["resolution_y"] / (2 * math.tan(math.radians(camera_params['vfov']) / 2))
+
+        hostSpatials = HostSpatialsCalc(camera_params)
 
         while True:
             inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
@@ -130,9 +130,9 @@ def main():
                         topLeftXY = (int(min(tag.corners[:, 0])), int(min(tag.corners[:, 1])))
                         bottomRightXY = (int(max(tag.corners[:, 0])), int(max(tag.corners[:, 1])))
 
-                        spatialData, _ = hostSpatials.calc_spatials(depthFrame, (topLeftXY[0], topLeftXY[1], bottomRightXY[0], bottomRightXY[1]))
+                        robotPose, tagTranslation, spatialData, = hostSpatials.calc_spatials(depthFrame, tag, (topLeftXY[0], topLeftXY[1], bottomRightXY[0], bottomRightXY[1]))
 
-                        robotPose, tagTranslation = spatialCalculator.estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, frameRight.shape)
+                        # robotPose, tagTranslation = spatialCalculator.estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, frameRight.shape)
 
                         if robotPose is None:
                             continue
@@ -181,10 +181,10 @@ def main():
 
                         # If we have spatial data, print it
                         if "spatialData" in detectedTag.keys() and not DISABLE_VIDEO_OUTPUT:
-                            cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["translation"]['x']),
+                            cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["spatialData"]['x']),
                                         (textX, textY + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                                         (255, 255, 255))
-                            cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["translation"]['y']),
+                            cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["spatialData"]['y']),
                                         (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                                         (255, 255, 255))
                             cv2.putText(frameRight, "x angle: {:.2f}".format(detectedTag["translation"]['x_angle']),
@@ -193,7 +193,7 @@ def main():
                             cv2.putText(frameRight, "y angle: {:.2f}".format(detectedTag["translation"]['y_angle']),
                                         (textX, textY + 80), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                                         (255, 255, 255))
-                            cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["translation"]['z']),
+                            cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["spatialData"]['z']),
                                         (textX, textY + 100), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                                         (255, 255, 255))
                             cv2.rectangle(frameRight, detectedTag["topLeftXY"], detectedTag["bottomRightXY"],
