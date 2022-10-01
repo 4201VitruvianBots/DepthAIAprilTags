@@ -63,8 +63,7 @@ def main():
     DISABLE_VIDEO_OUTPUT = args.test
     ENABLE_SOLVEPNP = args.apriltag_pose
 
-    # pipeline, pipeline_info = spatialCalculator_pipelines.create_stereoDepth_pipeline()
-    pipeline, pipeline_info = spatialCalculator_pipelines.create_spatialCalculator_pipeline()
+    pipeline, pipeline_info = spatialCalculator_pipelines.create_stereoDepth_pipeline()
 
     detector = Detector(families=args.family,
                         nthreads=args.nthreads,
@@ -109,8 +108,6 @@ def main():
 
         depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=4, blocking=False)
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
-        spatialCalcQueue = device.getOutputQueue(name=pipeline_info["spatialDataQueue"], maxSize=4, blocking=False)
-        spatialCalcConfigInQueue = device.getInputQueue("spatialCalcConfig")
 
         # Precalculate this value to save some performance
         camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
@@ -121,9 +118,6 @@ def main():
         while True:
             inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
             inRight = qRight.tryGet()
-
-            inDepthAvg = spatialCalcQueue.get()  # blocking call, will wait until a new data has arrived
-            spatialCalcData = inDepthAvg.getSpatialLocations()
 
             depthFrame = inDepth.getFrame()
 
@@ -171,39 +165,16 @@ def main():
                         pose_id.append(tag.tag_id)
                         log.info("Tag ID: {}\tCenter: {}\tz: {}".format(tag.tag_id, tag.center, spatialData['z']))
 
-                        if tag.tag_id == 2:
-                            topLeft = dai.Point2f(0.4, 0.4)
-                            bottomRight = dai.Point2f(0.6, 0.6)
-                            topLeftXY = (min(tag.corners[:, 0]), min(tag.corners[:, 1]))
-                            bottomRightXY = (max(tag.corners[:, 0]), max(tag.corners[:, 1]))
-                            topLeft.x = topLeftXY[0] / frameRight.shape[1]
-                            topLeft.y = topLeftXY[1] / frameRight.shape[0]
-                            bottomRight.x = bottomRightXY[0] / frameRight.shape[1]
-                            bottomRight.y = bottomRightXY[1] / frameRight.shape[0]
-                            config = dai.SpatialLocationCalculatorConfigData()
-                            config.depthThresholds.lowerThreshold = 100
-                            config.depthThresholds.upperThreshold = 10000
-                            config.roi = dai.Rect(topLeft, bottomRight)
-                            cfg.addROI(config)
-
                         if ENABLE_SOLVEPNP:
-                            # tagInfo['deltaTranslation'] = {
-                            #     'x': tag.pose_t[0][0] - spatialData['x'],
-                            #     'y': tag.pose_t[1][0] - spatialData['y'],
-                            #     'z': tag.pose_t[2][0] - spatialData['z']
-                            # }
-                            if tag.tag_id == 2:
-                                tagInfo['deltaTranslation'] = {
-                                    'x': tag.pose_t[0][0] - (spatialCalcData[0].spatialCoordinates.y / 1000),
-                                    'y': tag.pose_t[1][0] - (spatialCalcData[0].spatialCoordinates.x / 1000),
-                                    'z': tag.pose_t[2][0] - (spatialCalcData[0].spatialCoordinates.z / 1000)
-                                }
-                                log.info("Tag ID: {}\tDelta X: {:.2f}\tDelta Y: {:.2f}\tDelta Z: {:.2f}".format(tag.tag_id,
-                                                                                                                tagInfo['deltaTranslation']['x'],
-                                                                                                                tagInfo['deltaTranslation']['y'],
-                                                                                                                tagInfo['deltaTranslation']['z']))
-
-
+                            tagInfo['deltaTranslation'] = {
+                                'x': tag.pose_t[0][0] - spatialData['x'],
+                                'y': tag.pose_t[1][0] - spatialData['y'],
+                                'z': tag.pose_t[2][0] - spatialData['z']
+                            }
+                            log.info("Tag ID: {}\tDelta X: {:.2f}\tDelta Y: {:.2f}\tDelta Z: {:.2f}".format(tag.tag_id,
+                                                                                                            tagInfo['deltaTranslation']['x'],
+                                                                                                            tagInfo['deltaTranslation']['y'],
+                                                                                                            tagInfo['deltaTranslation']['z']))
 
                     # Merge AprilTag measurements to estimate
                     avg_x = sum(x_pos) / len(x_pos)
@@ -217,8 +188,6 @@ def main():
                     nt_tab.putNumberArray("X Poses", x_pos)
                     nt_tab.putNumberArray("Y Poses", y_pos)
                     nt_tab.putNumberArray("Z Poses", z_pos)
-
-                    spatialCalcConfigInQueue.send(cfg)
 
                     for detectedTag in detectedTags:
                         points = detectedTag["corners"].astype(np.int32)
