@@ -1,4 +1,6 @@
 
+import numpy as np
+
 TAG_SIZE_M = 0.2
 PADDING_PERCENTAGE = 0.31
 
@@ -9,42 +11,30 @@ CAMERA_MOUNT_HEIGHT = 0.0
 CAMERA_PARAMS = {
     "OAK-D": {
         "rgb": {
-            # "fx": 3.37, # in mm
-            # "fy": 3.37,
             "hfov": 69.0,
             "vfov": 55.0
         },
         "mono": {
-            # "fx": 1.3, # in mm
-            # "fy": 1.3,
             "hfov": 72.0,
             "vfov": 50.0
         },
     },
     "OAK-D PoE": {
         "rgb": {
-            # "fx": 3.37, # in mm
-            # "fy": 3.37,
             "hfov": 69.0,
             "vfov": 55.0
         },
         "mono": {
-            # "fx": 1.3, # in mm
-            # "fy": 1.3,
             "hfov": 72.0,
             "vfov": 50.0
         },
     },
     "OAK-D Lite": {
         "rgb": {
-            "fx": 3.37, # in mm
-            "fy": 3.37,
             "hfov": 69.0,
             "vfov": 54.0
         },
         "mono": {
-            "fx": 1.3, # in mm
-            "fy": 1.3,
             "hfov": 73.0,
             "vfov": 58.0
         },
@@ -52,14 +42,10 @@ CAMERA_PARAMS = {
     "OAK-D Pro W": {
     # "boardName": "OAK-D Pro W 120",
         "rgb": {
-            # "fx": 3.37, # in mm
-            # "fy": 3.37,
             "hfov": 95.0,
             "vfov": 70.0
         },
         "mono": {
-            # "fx": 1.3, # in mm
-            # "fy": 1.3,
             "hfov": 128.0,
             "vfov": 80.0,
             "rhfov": 97.0,
@@ -68,28 +54,20 @@ CAMERA_PARAMS = {
     },
     "OAK-D Pro PoE FF": {
         "rgb": {
-            # "fx": 3.37, # in mm
-            # "fy": 3.37,
             "hfov": 69.0,
             "vfov": 55.0
         },
         "mono": {
-            # "fx": 1.3, # in mm
-            # "fy": 1.3,
             "hfov": 80.0,
             "vfov": 55.0,
         },
     },
     "OAK-D Pro W PoE 120": {
         "rgb": {
-            # "fx": 3.37, # in mm
-            # "fy": 3.37,
             "hfov": 95.0,
             "vfov": 70.0
         },
         "mono": {
-            # "fx": 1.3, # in mm
-            # "fy": 1.3,
             "hfov": 128.0,
             "vfov": 80.0,
             "rhfov": 97.0,
@@ -140,3 +118,29 @@ TAG_DICTIONARY = {
         }
     },
 }
+
+OPOINTS = np.array([
+    -1, -1, 0,
+     1, -1, 0,
+     1,  1, 0,
+    -1,  1, 0,
+    -1, -1, -2 * 1,
+     1, -1, -2 * 1,
+     1,  1, -2 * 1,
+    -1,  1, -2 * 1,
+]).reshape(-1, 1, 3) * 0.5 * TAG_SIZE_M
+
+EDGES = np.array([
+    0, 1,
+    1, 2,
+    2, 3,
+    3, 0,
+    0, 4,
+    1, 5,
+    2, 6,
+    3, 7,
+    4, 5,
+    5, 6,
+    6, 7,
+    7, 4
+]).reshape(-1, 2)

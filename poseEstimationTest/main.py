@@ -39,6 +39,7 @@ with dai.Device(pipeline) as device:
         643.565185546875,
         403.140625
     )
+
     opoints = np.array([
         -1, -1, 0,
          1, -1, 0,

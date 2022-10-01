@@ -27,6 +27,7 @@ parser.add_argument('-qs', dest='quad_sigma', action="store", type=float, defaul
 parser.add_argument('-re', dest='refine_edges', action="store", type=float, default=1.0, help='refine_edges (default: 1.0)')
 parser.add_argument('-ds', dest='decode_sharpening', action="store", type=float, default=0.25, help='decode_sharpening (default: 0.25)')
 parser.add_argument('-dd', dest='detector_debug', action="store", type=int, default=0, help='AprilTag Detector debug mode (default: 0)')
+parser.add_argument('-pnp', dest='apriltag_pose', action="store_true", default=False, help='Enable pupil_apriltags Detector Pose Estimation')
 
 args = parser.parse_args()
 
@@ -60,8 +61,10 @@ def main():
     log.info("Starting AprilTag Spatial Detector")
 
     DISABLE_VIDEO_OUTPUT = args.test
+    ENABLE_SOLVEPNP = args.apriltag_pose
 
-    pipeline, pipeline_info = spatialCalculator_pipelines.create_spaitalCalculator_pipeline()
+    # pipeline, pipeline_info = spatialCalculator_pipelines.create_stereoDepth_pipeline()
+    pipeline, pipeline_info = spatialCalculator_pipelines.create_spatialCalculator_pipeline()
 
     detector = Detector(families=args.family,
                         nthreads=args.nthreads,
@@ -81,10 +84,12 @@ def main():
         if device.getUsbSpeed() not in [dai.UsbSpeed.SUPER, dai.UsbSpeed.SUPER_PLUS]:
             log.warning("USB Speed is set to USB 2.0")
 
-        calibData = device.readCalibration()
-        productName = calibData.getEepromData().productName
+        eepromData = device.readCalibration().getEepromData();
+        productName = eepromData.productName
+        intrinsicMatrix = eepromData.cameraData.get(dai.CameraBoardSocket.RIGHT).intrinsicMatrix
+
         if len(productName) == 0:
-            boardName = calibData.getEepromData().boardName
+            boardName = eepromData.boardName
             if boardName == 'BW1098OBC':
                 productName = 'OAK-D'
             else:
@@ -94,7 +99,9 @@ def main():
         camera_params = {
             "hfov": constants.CAMERA_PARAMS[productName]["mono"]["hfov"],
             "vfov": constants.CAMERA_PARAMS[productName]["mono"]["vfov"],
-            "mount_angle_radians": math.radians(constants.CAMERA_MOUNT_ANGLE)
+            "mount_angle_radians": math.radians(constants.CAMERA_MOUNT_ANGLE),
+            "intrinsicMatrix": np.array(intrinsicMatrix).reshape(3, 3),
+            "intrinsicValues": (intrinsicMatrix[0][0], intrinsicMatrix[1][1], intrinsicMatrix[0][2], intrinsicMatrix[1][2])
         }
 
         device.setIrLaserDotProjectorBrightness(1200)
@@ -102,6 +109,8 @@ def main():
 
         depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=4, blocking=False)
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
+        spatialCalcQueue = device.getOutputQueue(name=pipeline_info["spatialDataQueue"], maxSize=4, blocking=False)
+        spatialCalcConfigInQueue = device.getInputQueue("spatialCalcConfig")
 
         # Precalculate this value to save some performance
         camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
@@ -113,12 +122,15 @@ def main():
             inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
             inRight = qRight.tryGet()
 
+            inDepthAvg = spatialCalcQueue.get()  # blocking call, will wait until a new data has arrived
+            spatialCalcData = inDepthAvg.getSpatialLocations()
+
             depthFrame = inDepth.getFrame()
 
             if inRight is not None:
                 frameRight = inRight.getCvFrame()  # get mono right frame
 
-                tags = detector.detect(frameRight, estimate_tag_pose=False, tag_size=0.2)
+                tags = detector.detect(frameRight, estimate_tag_pose=ENABLE_SOLVEPNP, camera_params=camera_params['intrinsicValues'], tag_size=0.2)
 
                 if len(tags) > 0:
                     detectedTags = []
@@ -126,6 +138,7 @@ def main():
                     y_pos = []
                     z_pos = []
                     pose_id = []
+                    cfg = dai.SpatialLocationCalculatorConfig()
                     for tag in tags:
                         topLeftXY = (int(min(tag.corners[:, 0])), int(min(tag.corners[:, 1])))
                         bottomRightXY = (int(max(tag.corners[:, 0])), int(max(tag.corners[:, 1])))
@@ -147,7 +160,9 @@ def main():
                             "bottomRightXY": bottomRightXY,
                             "spatialData": spatialData,
                             "translation": tagTranslation,
-                            "estimatedRobotPose": robotPose
+                            "estimatedRobotPose": robotPose,
+                            "tagPoseT": tag.pose_t,
+                            "tagPoseR": tag.pose_R
                         }
                         detectedTags.append(tagInfo)
                         x_pos.append(robotPose['x'])
@@ -155,6 +170,40 @@ def main():
                         z_pos.append(robotPose['z'])
                         pose_id.append(tag.tag_id)
                         log.info("Tag ID: {}\tCenter: {}\tz: {}".format(tag.tag_id, tag.center, spatialData['z']))
+
+                        if tag.tag_id == 2:
+                            topLeft = dai.Point2f(0.4, 0.4)
+                            bottomRight = dai.Point2f(0.6, 0.6)
+                            topLeftXY = (min(tag.corners[:, 0]), min(tag.corners[:, 1]))
+                            bottomRightXY = (max(tag.corners[:, 0]), max(tag.corners[:, 1]))
+                            topLeft.x = topLeftXY[0] / frameRight.shape[1]
+                            topLeft.y = topLeftXY[1] / frameRight.shape[0]
+                            bottomRight.x = bottomRightXY[0] / frameRight.shape[1]
+                            bottomRight.y = bottomRightXY[1] / frameRight.shape[0]
+                            config = dai.SpatialLocationCalculatorConfigData()
+                            config.depthThresholds.lowerThreshold = 100
+                            config.depthThresholds.upperThreshold = 10000
+                            config.roi = dai.Rect(topLeft, bottomRight)
+                            cfg.addROI(config)
+
+                        if ENABLE_SOLVEPNP:
+                            # tagInfo['deltaTranslation'] = {
+                            #     'x': tag.pose_t[0][0] - spatialData['x'],
+                            #     'y': tag.pose_t[1][0] - spatialData['y'],
+                            #     'z': tag.pose_t[2][0] - spatialData['z']
+                            # }
+                            if tag.tag_id == 2:
+                                tagInfo['deltaTranslation'] = {
+                                    'x': tag.pose_t[0][0] - (spatialCalcData[0].spatialCoordinates.y / 1000),
+                                    'y': tag.pose_t[1][0] - (spatialCalcData[0].spatialCoordinates.x / 1000),
+                                    'z': tag.pose_t[2][0] - (spatialCalcData[0].spatialCoordinates.z / 1000)
+                                }
+                                log.info("Tag ID: {}\tDelta X: {:.2f}\tDelta Y: {:.2f}\tDelta Z: {:.2f}".format(tag.tag_id,
+                                                                                                                tagInfo['deltaTranslation']['x'],
+                                                                                                                tagInfo['deltaTranslation']['y'],
+                                                                                                                tagInfo['deltaTranslation']['z']))
+
+
 
                     # Merge AprilTag measurements to estimate
                     avg_x = sum(x_pos) / len(x_pos)
@@ -169,6 +218,8 @@ def main():
                     nt_tab.putNumberArray("Y Poses", y_pos)
                     nt_tab.putNumberArray("Z Poses", z_pos)
 
+                    spatialCalcConfigInQueue.send(cfg)
+
                     for detectedTag in detectedTags:
                         points = detectedTag["corners"].astype(np.int32)
                         # Shift points since this is a snapshot
@@ -178,6 +229,20 @@ def main():
                         cv2.putText(frameRight, "tag_id: {}".format(detectedTag['id']),
                                     (textX, textY), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
                                     (255, 255, 255))
+
+                        if ENABLE_SOLVEPNP:
+                            ipoints, _ = cv2.projectPoints(constants.OPOINTS,
+                                                           detectedTag["tagPoseR"],
+                                                           detectedTag["tagPoseT"],
+                                                           camera_params['intrinsicMatrix'],
+                                                           np.zeros(5))
+
+                            ipoints = np.round(ipoints).astype(int)
+
+                            ipoints = [tuple(pt) for pt in ipoints.reshape(-1, 2)]
+
+                            for i, j in constants.EDGES:
+                                cv2.line(frameRight, ipoints[i], ipoints[j], (0, 255, 0), 1, 16)
 
                         # If we have spatial data, print it
                         if "spatialData" in detectedTag.keys() and not DISABLE_VIDEO_OUTPUT:

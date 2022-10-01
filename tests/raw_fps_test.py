@@ -13,7 +13,7 @@ class FPS_Test:
     def __init__(self):
         self.log = logging.getLogger(__name__)
 
-        self.pipeline, self.pipeline_info = spatialCalculator_pipelines.create_spaitalCalculator_pipeline()
+        self.pipeline, self.pipeline_info = spatialCalculator_pipelines.create_stereoDepth_pipeline()
 
         self.pipeline.setXLinkChunkSize(0)
         self.frame_queue = queue.Queue()
