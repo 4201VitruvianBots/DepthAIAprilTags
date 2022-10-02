@@ -1,3 +1,4 @@
+import math
 import time
 
 import cv2
@@ -86,3 +87,50 @@ class FPSHandler:
         print("=== TOTAL FPS ===")
         for name in self._ticks:
             print(f"[{name}]: {self.tickFps(name):.1f}")
+
+
+class OakIMU:
+    def __init__(self, imuQueue, roll=0, pitch=0, yaw=0):
+        self._imuQueue = imuQueue
+        self.resetIMU(roll, pitch, yaw)
+
+    def resetIMU(self, roll=0, pitch=0, yaw=0):
+        self._roll = roll
+        self._pitch = pitch
+        self._yaw = yaw
+
+        self._lastTimestamp = 0
+        self._lastRoll = 0
+        self._lastPitch = 0
+        self._lastYaw = 0
+
+    def update(self):
+        try:
+            imuData = self._imuQueue.get()
+        except Exception as e:
+            pass
+
+        if imuData is not None:
+            imuPackets = imuData.packets
+
+            for imuPacket in imuPackets:
+                gyroValues = imuPacket.gyroscope
+
+                gyroTs = gyroValues.timestamp.get().total_seconds()
+
+                if self._lastTimestamp != 0:
+                    self._roll += gyroValues.x / (gyroTs - self._lastTimestamp)
+                    self._pitch += gyroValues.y / (gyroTs - self._lastTimestamp)
+                    self._yaw += gyroValues.z / (gyroTs - self._lastTimestamp)
+
+                self._lastTimestamp = gyroTs
+                self._lastRoll = gyroValues.x
+                self._lastPitch = gyroValues.y
+                self._lastYaw = gyroValues.z
+
+    def getImuAngles(self):
+        return {
+            'roll': math.degrees(self._roll),
+            'pitch': math.degrees(self._pitch),
+            'yaw': math.degrees(self._yaw)
+        }

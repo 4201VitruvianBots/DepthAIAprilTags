@@ -2,6 +2,7 @@ import math
 import numpy as np
 import depthai as dai
 
+from common import mathUtils
 from common.constants import TAG_DICTIONARY
 
 
@@ -44,7 +45,7 @@ class HostSpatialsCalc:
         return math.atan(math.tan(self.monoVFOV / 2.0) * offset / (frame.shape[0] / 2.0))
 
     # roi has to be list of ints
-    def calc_spatials(self, depthFrame, tag, roi, averaging_method=np.mean):
+    def calc_spatials(self, depthFrame, tag, roi, robot_angle=0, averaging_method=np.mean):
         if tag.tag_id not in TAG_DICTIONARY.keys():
             return None, None, None
 
@@ -60,8 +61,8 @@ class HostSpatialsCalc:
         averageDepth = averaging_method(depthROI[inRange])
 
         centroid = {  # Get centroid of the ROI
-            'x': tag.center[1],
-            'y': tag.center[0]
+            'x': tag.center[0],
+            'y': tag.center[1]
         }
 
         midW = int(depthFrame.shape[1] / 2)  # middle of the depth img width
@@ -88,9 +89,11 @@ class HostSpatialsCalc:
             'y_angle': math.degrees(angle_y)
         }
 
+        rotatedTranslation = mathUtils.rotateTranslation((tag_translation['x'], tag_translation['y']), robot_angle)
+
         robotPose = {
-            'x': tagPose['x'] - tag_translation['x'],
-            'y': tagPose['y'] - tag_translation['y'],
+            'x': tagPose['x'] - rotatedTranslation[0],
+            'y': tagPose['y'] - rotatedTranslation[1],
             'z': tagPose['z'] - tag_translation['z']
         }
 

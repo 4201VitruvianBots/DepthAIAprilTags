@@ -11,6 +11,7 @@ from pupil_apriltags import Detector
 
 import spatialCalculator
 import spatialCalculator_pipelines
+from common.utils import OakIMU
 from spatialCalculator import HostSpatialsCalc
 
 from common import constants
@@ -27,7 +28,9 @@ parser.add_argument('-qs', dest='quad_sigma', action="store", type=float, defaul
 parser.add_argument('-re', dest='refine_edges', action="store", type=float, default=1.0, help='refine_edges (default: 1.0)')
 parser.add_argument('-ds', dest='decode_sharpening', action="store", type=float, default=0.25, help='decode_sharpening (default: 0.25)')
 parser.add_argument('-dd', dest='detector_debug', action="store", type=int, default=0, help='AprilTag Detector debug mode (default: 0)')
+
 parser.add_argument('-pnp', dest='apriltag_pose', action="store_true", default=False, help='Enable pupil_apriltags Detector Pose Estimation')
+parser.add_argument('-imu', dest='imu', action="store_true", default=False, help='Use OAK IMU')
 
 args = parser.parse_args()
 
@@ -62,6 +65,7 @@ def main():
 
     DISABLE_VIDEO_OUTPUT = args.test
     ENABLE_SOLVEPNP = args.apriltag_pose
+    # ENABLE_IMU = args.imu
 
     pipeline, pipeline_info = spatialCalculator_pipelines.create_stereoDepth_pipeline()
 
@@ -83,7 +87,7 @@ def main():
         if device.getUsbSpeed() not in [dai.UsbSpeed.SUPER, dai.UsbSpeed.SUPER_PLUS]:
             log.warning("USB Speed is set to USB 2.0")
 
-        eepromData = device.readCalibration().getEepromData();
+        eepromData = device.readCalibration().getEepromData()
         productName = eepromData.productName
         intrinsicMatrix = eepromData.cameraData.get(dai.CameraBoardSocket.RIGHT).intrinsicMatrix
 
@@ -108,6 +112,9 @@ def main():
 
         depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=4, blocking=False)
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
+        # if ENABLE_IMU:
+        #     imuQueue = device.getOutputQueue(name=pipeline_info["imuQueue"], maxSize=4, blocking=False)
+        #     gyro = OakIMU(imuQueue)
 
         # Precalculate this value to save some performance
         camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
@@ -115,16 +122,27 @@ def main():
 
         hostSpatials = HostSpatialsCalc(camera_params)
 
+        inDepth = None
+        inRight = None
+        depthFrame = None
+        frameRight = None
         while True:
-            inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
-            inRight = qRight.tryGet()
+            try:
+                inDepth = depthQueue.tryGet()  # blocking call, will wait until a new data has arrived
+                inRight = qRight.tryGet()
+            except Exception as e:
+                pass
 
-            depthFrame = inDepth.getFrame()
+            # if ENABLE_IMU:
+            #     gyro.update()
+            #     angles = gyro.getImuAngles()
+            #     log.info("IMU - X: {}\tY: {}\tZ: {}".format(angles['roll'], angles['pitch'], angles['yaw']))
 
-            if inRight is not None:
+            if inRight is not None and inDepth is not None:
+                depthFrame = inDepth.getFrame()
                 frameRight = inRight.getCvFrame()  # get mono right frame
 
-                tags = detector.detect(frameRight, estimate_tag_pose=ENABLE_SOLVEPNP, camera_params=camera_params['intrinsicValues'], tag_size=0.2)
+                tags = detector.detect(frameRight, estimate_tag_pose=ENABLE_SOLVEPNP, camera_params=camera_params['intrinsicValues'], tag_size=constants.TAG_SIZE_M)
 
                 if len(tags) > 0:
                     detectedTags = []
@@ -132,12 +150,17 @@ def main():
                     y_pos = []
                     z_pos = []
                     pose_id = []
-                    cfg = dai.SpatialLocationCalculatorConfig()
+
                     for tag in tags:
+                        if tag.decision_margin < 50:
+                            continue
+
                         topLeftXY = (int(min(tag.corners[:, 0])), int(min(tag.corners[:, 1])))
                         bottomRightXY = (int(max(tag.corners[:, 0])), int(max(tag.corners[:, 1])))
 
-                        robotPose, tagTranslation, spatialData, = hostSpatials.calc_spatials(depthFrame, tag, (topLeftXY[0], topLeftXY[1], bottomRightXY[0], bottomRightXY[1]))
+                        roi = (topLeftXY[0], topLeftXY[1], bottomRightXY[0], bottomRightXY[1])
+                        robotAngle = math.radians(90)
+                        robotPose, tagTranslation, spatialData, = hostSpatials.calc_spatials(depthFrame, tag, roi, robotAngle)
 
                         # robotPose, tagTranslation = spatialCalculator.estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, frameRight.shape)
 
@@ -177,10 +200,10 @@ def main():
                                                                                                             tagInfo['deltaTranslation']['z']))
 
                     # Merge AprilTag measurements to estimate
-                    avg_x = sum(x_pos) / len(x_pos)
-                    avg_y = sum(y_pos) / len(y_pos)
-                    avg_z = sum(z_pos) / len(z_pos)
                     if len(detectedTags) > 1:
+                        avg_x = sum(x_pos) / len(x_pos)
+                        avg_y = sum(y_pos) / len(y_pos)
+                        avg_z = sum(z_pos) / len(z_pos)
                         log.info("Estimated Pose X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(avg_x, avg_y, avg_z))
                         log.info("Std dev X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(np.std(x_pos), np.std(y_pos), np.std(z_pos)))
 
@@ -235,7 +258,7 @@ def main():
 
             fps.nextIter()
 
-            if not DISABLE_VIDEO_OUTPUT:
+            if not DISABLE_VIDEO_OUTPUT and depthFrame is not None and frameRight is not None:
                 cv2.circle(frameRight, (int(frameRight.shape[1] / 2), int(frameRight.shape[0] / 2)), 1, (255, 255, 255), 1)
                 cv2.putText(frameRight, "{:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
@@ -255,5 +278,4 @@ def main():
 
 
 if __name__ == '__main__':
-    log.info("Starting AprilTag SpatialCalculator")
     main()
