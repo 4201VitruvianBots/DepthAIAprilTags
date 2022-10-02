@@ -138,11 +138,15 @@ class OakIMU:
         }
 
 class AndroidWirelessIMU:
-    def __init__(self, imuQueue, roll=0, pitch=0, yaw=0):
-        self._imuQueue = imuQueue
+    def __init__(self, host='localhost', port=4201, roll=0, pitch=0, yaw=0):
         
         self._socket = socket.socket(socket.AF_NET, socket.SOCK_DGRAM)
-        self.
+        
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+        self._socket.bind((host, port))
         
         self.resetIMU(roll, pitch, yaw)
 
@@ -157,28 +161,26 @@ class AndroidWirelessIMU:
         self._lastYaw = 0
 
     def update(self):
+        message = None
         try:
-            imuData = self._imuQueue.get()
+            message, address = s.recvfrom(8192)
         except Exception as e:
             pass
 
-        if imuData is not None:
-            imuPackets = imuData.packets
+        if message is not None:
+            print(message)
+            data = message.split(',')
+            gyroTs = data[0]
 
-            for imuPacket in imuPackets:
-                gyroValues = imuPacket.gyroscope
+            if self._lastTimestamp != 0:
+                self._roll += data[1] / (gyroTs - self._lastTimestamp)
+                self._pitch += data[2] / (gyroTs - self._lastTimestamp)
+                self._yaw += data[3] / (gyroTs - self._lastTimestamp)
 
-                gyroTs = gyroValues.timestamp.get().total_seconds()
-
-                if self._lastTimestamp != 0:
-                    self._roll += gyroValues.x / (gyroTs - self._lastTimestamp)
-                    self._pitch += gyroValues.y / (gyroTs - self._lastTimestamp)
-                    self._yaw += gyroValues.z / (gyroTs - self._lastTimestamp)
-
-                self._lastTimestamp = gyroTs
-                self._lastRoll = gyroValues.x
-                self._lastPitch = gyroValues.y
-                self._lastYaw = gyroValues.z
+            self._lastTimestamp = gyroTs
+            self._lastRoll = data[1]
+            self._lastPitch = data[2]
+            self._lastYaw = data[3]
 
     def getImuAngles(self):
         return {
