@@ -4,8 +4,6 @@ import socket
 import time
 
 
-
-
 class FPSHandler:
 
     def __init__(self, cap=None, maxTicks = 100):
@@ -137,18 +135,21 @@ class OakIMU:
             'yaw': math.degrees(self._yaw)
         }
 
+
 class AndroidWirelessIMU:
-    def __init__(self, host='localhost', port=4201, roll=0, pitch=0, yaw=0):
-        
-        self._socket = socket.socket(socket.AF_NET, socket.SOCK_DGRAM)
-        
+    def __init__(self, host=None, port=4201, roll=0, pitch=0, yaw=0):
+        if host is None:
+            hostname = socket.gethostname()
+            host = socket.gethostbyname(hostname)
+
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-
+        self._socket.settimeout(10.0)
         self._socket.bind((host, port))
-        
-        self.resetIMU(roll, pitch, yaw)
+        print("Listening to data coming into {}:{}".format(host, port))
+
+        self.reset(roll, pitch, yaw)
 
     def reset(self, roll=0, pitch=0, yaw=0):
         self._roll = roll
@@ -161,11 +162,11 @@ class AndroidWirelessIMU:
         self._lastYaw = 0
 
     def update(self):
-        message = None
         try:
-            message, address = s.recvfrom(8192)
+            message, address = self._socket.recvfrom(8192)
         except Exception as e:
-            pass
+            print("Socket Error: {}".format(e))
+            return
 
         if message is not None:
             print(message)
@@ -182,7 +183,7 @@ class AndroidWirelessIMU:
             self._lastPitch = data[2]
             self._lastYaw = data[3]
 
-    def getImuAngles(self):
+    def readValues(self):
         return {
             'roll': math.degrees(self._roll),
             'pitch': math.degrees(self._pitch),

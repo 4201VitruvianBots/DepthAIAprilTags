@@ -1,36 +1,42 @@
 import argparse
-
 import cv2
 import depthai as dai
 import logging
-from networktables.util import NetworkTables
 import math
 import numpy as np
 
-from pupil_apriltags import Detector
-
-import spatialCalculator
-import spatialCalculator_pipelines
-from common.utils import OakIMU
-from spatialCalculator import HostSpatialsCalc
-
 from common import constants
 from common import utils
+import spatialCalculator_pipelines
+
+from common.utils import AndroidWirelessIMU
+from networktables.util import NetworkTables
+from pupil_apriltags import Detector
+from spatialCalculator import HostSpatialsCalc
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-d', dest='debug', action="store_true", default=False, help='Start in Debug Mode')
 parser.add_argument('-t', dest='test', action="store_true", default=False, help='Start in Test Mode')
 
-parser.add_argument('-f', dest='family', action="store", type=str, default='tag36h11', help='Tag family (default: tag36h11)')
-parser.add_argument('-nt', dest='nthreads', action="store", type=int, default=3, help='nthreads (default: 3)')
-parser.add_argument('-qd', dest='quad_decimate', action="store", type=float, default=4.0, help='quad_decimate (default: 4)')
-parser.add_argument('-qs', dest='quad_sigma', action="store", type=float, default=0.0, help='quad_sigma (default: 0.0)')
-parser.add_argument('-re', dest='refine_edges', action="store", type=float, default=1.0, help='refine_edges (default: 1.0)')
-parser.add_argument('-ds', dest='decode_sharpening', action="store", type=float, default=0.25, help='decode_sharpening (default: 0.25)')
-parser.add_argument('-dd', dest='detector_debug', action="store", type=int, default=0, help='AprilTag Detector debug mode (default: 0)')
+parser.add_argument('-f', dest='family', action="store", type=str, default='tag36h11',
+                    help='Tag family (default: tag36h11)')
+parser.add_argument('-nt', dest='nthreads', action="store", type=int, default=3,
+                    help='nthreads (default: 3)')
+parser.add_argument('-qd', dest='quad_decimate', action="store", type=float, default=4.0,
+                    help='quad_decimate (default: 4)')
+parser.add_argument('-qs', dest='quad_sigma', action="store", type=float, default=0.0,
+                    help='quad_sigma (default: 0.0)')
+parser.add_argument('-re', dest='refine_edges', action="store", type=float, default=1.0,
+                    help='refine_edges (default: 1.0)')
+parser.add_argument('-ds', dest='decode_sharpening', action="store", type=float, default=0.25,
+                    help='decode_sharpening (default: 0.25)')
+parser.add_argument('-dd', dest='detector_debug', action="store", type=int, default=0,
+                    help='AprilTag Detector debug mode (default: 0)')
 
-parser.add_argument('-pnp', dest='apriltag_pose', action="store_true", default=False, help='Enable pupil_apriltags Detector Pose Estimation')
-parser.add_argument('-imu', dest='imu', action="store_true", default=False, help='Use OAK IMU')
+parser.add_argument('-pnp', dest='apriltag_pose', action="store_true", default=False,
+                    help='Enable pupil_apriltags Detector Pose Estimation')
+parser.add_argument('-imu', dest='imu', action="store_true", default=False, help='Use external IMU')
 
 args = parser.parse_args()
 
@@ -65,7 +71,7 @@ def main():
 
     DISABLE_VIDEO_OUTPUT = args.test
     ENABLE_SOLVEPNP = args.apriltag_pose
-    # ENABLE_IMU = args.imu
+    USE_EXTERNAL_IMU = args.imu
 
     pipeline, pipeline_info = spatialCalculator_pipelines.create_stereoDepth_pipeline()
 
@@ -78,7 +84,8 @@ def main():
                         debug=args.detector_debug)
 
     init_networktables()
-    nt_tab = NetworkTables.getTable("DepthAI")
+    nt_depthai_tab = NetworkTables.getTable("DepthAI")
+    nt_drivetrain_tab = NetworkTables.getTable("Drivetrain")
 
     fps = utils.FPSHandler()
 
@@ -87,34 +94,38 @@ def main():
         if device.getUsbSpeed() not in [dai.UsbSpeed.SUPER, dai.UsbSpeed.SUPER_PLUS]:
             log.warning("USB Speed is set to USB 2.0")
 
+        deviceID = device.getMxId()
         eepromData = device.readCalibration().getEepromData()
-        productName = eepromData.productName
-        intrinsicMatrix = eepromData.cameraData.get(dai.CameraBoardSocket.RIGHT).intrinsicMatrix
+        iMatrix = eepromData.cameraData.get(dai.CameraBoardSocket.RIGHT).intrinsicMatrix
 
-        if len(productName) == 0:
-            boardName = eepromData.boardName
-            if boardName == 'BW1098OBC':
-                productName = 'OAK-D'
-            else:
-                log.warning("Product name could not be determined. Defaulting to OAK-D")
-                productName = 'OAK-D'
+        if deviceID in constants.CAMERA_IDS:
+            productName = constants.CAMERA_IDS[deviceID]
+        else:
+            productName = eepromData.productName
+
+            if len(productName) == 0:
+                boardName = eepromData.boardName
+                if boardName == 'BW1098OBC':
+                    productName = 'OAK-D'
+                else:
+                    log.warning("Product name could not be determined. Defaulting to OAK-D")
+                    productName = 'OAK-D'
 
         camera_params = {
             "hfov": constants.CAMERA_PARAMS[productName]["mono"]["hfov"],
             "vfov": constants.CAMERA_PARAMS[productName]["mono"]["vfov"],
             "mount_angle_radians": math.radians(constants.CAMERA_MOUNT_ANGLE),
-            "intrinsicMatrix": np.array(intrinsicMatrix).reshape(3, 3),
-            "intrinsicValues": (intrinsicMatrix[0][0], intrinsicMatrix[1][1], intrinsicMatrix[0][2], intrinsicMatrix[1][2])
+            "iMatrix": np.array(iMatrix).reshape(3, 3),
+            "intrinsicValues": (iMatrix[0][0], iMatrix[1][1], iMatrix[0][2], iMatrix[1][2])
         }
 
-        device.setIrLaserDotProjectorBrightness(1200)
+        device.setIrLaserDotProjectorBrightness(300)
         # device.setIrFloodLightBrightness(1500)
 
         depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=4, blocking=False)
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
-        # if ENABLE_IMU:
-        #     imuQueue = device.getOutputQueue(name=pipeline_info["imuQueue"], maxSize=4, blocking=False)
-        #     gyro = OakIMU(imuQueue)
+        if USE_EXTERNAL_IMU:
+            gyro = AndroidWirelessIMU()
 
         # Precalculate this value to save some performance
         camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
@@ -126,23 +137,33 @@ def main():
         inRight = None
         depthFrame = None
         frameRight = None
+        robotAngle = 0
         while True:
             try:
                 inDepth = depthQueue.tryGet()  # blocking call, will wait until a new data has arrived
                 inRight = qRight.tryGet()
             except Exception as e:
-                pass
+                log.error("Frame not received")
+                continue
 
-            # if ENABLE_IMU:
-            #     gyro.update()
-            #     angles = gyro.getImuAngles()
-            #     log.info("IMU - X: {}\tY: {}\tZ: {}".format(angles['roll'], angles['pitch'], angles['yaw']))
+            if USE_EXTERNAL_IMU:
+                gyro.update()
+                angles = gyro.readValues()
+                log.info("IMU - X: {}\tY: {}\tZ: {}".format(angles['roll'], angles['pitch'], angles['yaw']))
+                robotAngle = angles['yaw']
+            else:
+                robotAngle = math.radians(nt_drivetrain_tab.getNumber("Heading_Degrees", 0.0))
 
             if inRight is not None and inDepth is not None:
+                fps.nextIter()
+
                 depthFrame = inDepth.getFrame()
                 frameRight = inRight.getCvFrame()  # get mono right frame
 
-                tags = detector.detect(frameRight, estimate_tag_pose=ENABLE_SOLVEPNP, camera_params=camera_params['intrinsicValues'], tag_size=constants.TAG_SIZE_M)
+                tags = detector.detect(frameRight,
+                                       estimate_tag_pose=ENABLE_SOLVEPNP,
+                                       camera_params=camera_params['intrinsicValues'],
+                                       tag_size=constants.TAG_SIZE_M)
 
                 if len(tags) > 0:
                     detectedTags = []
@@ -159,10 +180,8 @@ def main():
                         bottomRightXY = (int(max(tag.corners[:, 0])), int(max(tag.corners[:, 1])))
 
                         roi = (topLeftXY[0], topLeftXY[1], bottomRightXY[0], bottomRightXY[1])
-                        robotAngle = math.radians(90)
-                        robotPose, tagTranslation, spatialData, = hostSpatials.calc_spatials(depthFrame, tag, roi, robotAngle)
 
-                        # robotPose, tagTranslation = spatialCalculator.estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, frameRight.shape)
+                        robotPose, tagTranslation, spatialData, = hostSpatials.calc_spatials(depthFrame, tag, roi, robotAngle)
 
                         if robotPose is None:
                             continue
@@ -194,10 +213,11 @@ def main():
                                 'y': tag.pose_t[1][0] - spatialData['y'],
                                 'z': tag.pose_t[2][0] - spatialData['z']
                             }
-                            log.info("Tag ID: {}\tDelta X: {:.2f}\tDelta Y: {:.2f}\tDelta Z: {:.2f}".format(tag.tag_id,
-                                                                                                            tagInfo['deltaTranslation']['x'],
-                                                                                                            tagInfo['deltaTranslation']['y'],
-                                                                                                            tagInfo['deltaTranslation']['z']))
+                            log.info("Tag ID: {}\tDelta X: {:.2f}\t"
+                                     "Delta Y: {:.2f}\tDelta Z: {:.2f}".format(tag.tag_id,
+                                                                               tagInfo['deltaTranslation']['x'],
+                                                                               tagInfo['deltaTranslation']['y'],
+                                                                               tagInfo['deltaTranslation']['z']))
 
                     # Merge AprilTag measurements to estimate
                     if len(detectedTags) > 1:
@@ -205,12 +225,14 @@ def main():
                         avg_y = sum(y_pos) / len(y_pos)
                         avg_z = sum(z_pos) / len(z_pos)
                         log.info("Estimated Pose X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(avg_x, avg_y, avg_z))
-                        log.info("Std dev X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(np.std(x_pos), np.std(y_pos), np.std(z_pos)))
+                        log.info("Std dev X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(np.std(x_pos),
+                                                                                  np.std(y_pos),
+                                                                                  np.std(z_pos)))
 
-                    nt_tab.putNumberArray("Pose ID", pose_id)
-                    nt_tab.putNumberArray("X Poses", x_pos)
-                    nt_tab.putNumberArray("Y Poses", y_pos)
-                    nt_tab.putNumberArray("Z Poses", z_pos)
+                    nt_depthai_tab.putNumberArray("Pose ID", pose_id)
+                    nt_depthai_tab.putNumberArray("X Poses", x_pos)
+                    nt_depthai_tab.putNumberArray("Y Poses", y_pos)
+                    nt_depthai_tab.putNumberArray("Z Poses", z_pos)
 
                     for detectedTag in detectedTags:
                         points = detectedTag["corners"].astype(np.int32)
@@ -226,7 +248,7 @@ def main():
                             ipoints, _ = cv2.projectPoints(constants.OPOINTS,
                                                            detectedTag["tagPoseR"],
                                                            detectedTag["tagPoseT"],
-                                                           camera_params['intrinsicMatrix'],
+                                                           camera_params['iMatrix'],
                                                            np.zeros(5))
 
                             ipoints = np.round(ipoints).astype(int)
@@ -256,10 +278,8 @@ def main():
                             cv2.rectangle(frameRight, detectedTag["topLeftXY"], detectedTag["bottomRightXY"],
                                           (0, 0, 0), 3)
 
-            fps.nextIter()
-
             if not DISABLE_VIDEO_OUTPUT and depthFrame is not None and frameRight is not None:
-                cv2.circle(frameRight, (int(frameRight.shape[1] / 2), int(frameRight.shape[0] / 2)), 1, (255, 255, 255), 1)
+                cv2.circle(frameRight, (int(frameRight.shape[1]/2), int(frameRight.shape[0]/2)), 1, (255, 255, 255), 1)
                 cv2.putText(frameRight, "{:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
                 cv2.imshow(pipeline_info["monoRightQueue"], frameRight)
@@ -270,11 +290,14 @@ def main():
 
                 cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
             else:
-                print("FPS TEST: {:.2f}".format(fps.fps()))
+                print("FPS: {:.2f}".format(fps.fps()))
 
             key = cv2.waitKey(1)
             if key == ord('q'):
                 break
+            if key == ord(' '):
+                if 'gyro' in locals():
+                    gyro.reset()
 
 
 if __name__ == '__main__':
