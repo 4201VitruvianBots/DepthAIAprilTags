@@ -1,3 +1,4 @@
+import depthai as dai
 import math
 import time
 
@@ -105,6 +106,7 @@ class OakIMU:
         self._lastYaw = 0
 
     def update(self):
+        imuData = None
         try:
             imuData = self._imuQueue.get()
         except Exception as e:
@@ -114,19 +116,24 @@ class OakIMU:
             imuPackets = imuData.packets
 
             for imuPacket in imuPackets:
+
                 gyroValues = imuPacket.gyroscope
 
+                if gyroValues.accuracy != dai.IMUReport.Accuracy.HIGH:
+                    continue
+
                 gyroTs = gyroValues.timestamp.get().total_seconds()
+                if self._lastTimestamp != gyroTs:
+                    if self._lastTimestamp != 0:
+                        self._roll += (self._lastRoll - gyroValues.x) / (gyroTs - self._lastTimestamp)
+                        self._pitch += (self._lastPitch - gyroValues.y) / (gyroTs - self._lastTimestamp)
+                        self._yaw += (self._lastYaw - gyroValues.z) / (gyroTs - self._lastTimestamp)
 
-                if self._lastTimestamp != 0:
-                    self._roll += gyroValues.x / (gyroTs - self._lastTimestamp)
-                    self._pitch += gyroValues.y / (gyroTs - self._lastTimestamp)
-                    self._yaw += gyroValues.z / (gyroTs - self._lastTimestamp)
-
-                self._lastTimestamp = gyroTs
-                self._lastRoll = gyroValues.x
-                self._lastPitch = gyroValues.y
-                self._lastYaw = gyroValues.z
+                    self._lastTimestamp = gyroTs
+                    self._lastRoll = gyroValues.x
+                    self._lastPitch = gyroValues.y
+                    self._lastYaw = gyroValues.z
+                    break
 
     def getImuAngles(self):
         return {

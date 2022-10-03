@@ -1,6 +1,8 @@
 
 import depthai as dai
 
+from common import utils
+
 pipeline = dai.Pipeline()
 
 imu = pipeline.createIMU()
@@ -21,6 +23,7 @@ imu.out.link(xoutIMU.input)
 with dai.Device(pipeline) as device:
     imuQueue = device.getOutputQueue(name=imuQueueStr, maxSize=50, blocking=False)
 
+    gyro = utils.OakIMU(imuQueue)
     imuData = None
     while True:
         try:
@@ -29,20 +32,23 @@ with dai.Device(pipeline) as device:
             print("Error Reading from IMU queue")
 
         if imuData is not None:
-            imuPackets = imuData.packets
-
+            # imuPackets = imuData.packets
+            #
             imuF = "{:.06f}"
-            tsF  = "{:.03f}"
+            # tsF  = "{:.03f}"
+            #
+            # for imuPacket in imuPackets:
+            #     gyroValues = imuPacket.gyroscope
+            #
+            #     gyroTs = gyroValues.timestamp.get().total_seconds()
+            #
+            #     print(f"Gyroscope timestamp: {tsF.format(gyroTs)} ms")
+            #     print(f"Gyroscope [rad/s]: x: {imuF.format(gyroValues.x)} y: {imuF.format(gyroValues.y)} z: {imuF.format(gyroValues.z)} ")
+            gyro.update()
 
-            for imuPacket in imuPackets:
-                gyroValues = imuPacket.gyroscope
+            angles = gyro.getImuAngles()
+            print(f"Gyroscope [rad/s]: x: {imuF.format(angles['roll'])} y: {imuF.format(angles['pitch'])} z: {imuF.format(angles['yaw'])} ")
 
-                gyroTs = gyroValues.timestamp.get().total_seconds()
-
-                print(f"Gyroscope timestamp: {tsF.format(gyroTs)} ms")
-                print(f"Gyroscope [rad/s]: x: {imuF.format(gyroValues.x)} y: {imuF.format(gyroValues.y)} z: {imuF.format(gyroValues.z)} ")
-
-        imuData = None
 
     # gyro.update()
         # angles = gyro.getImuAngles()

@@ -65,9 +65,9 @@ def main():
 
     DISABLE_VIDEO_OUTPUT = args.test
     ENABLE_SOLVEPNP = args.apriltag_pose
-    # ENABLE_IMU = args.imu
+    ENABLE_IMU = args.imu
 
-    pipeline, pipeline_info = spatialCalculator_pipelines.create_stereoDepth_pipeline()
+    pipeline, pipeline_info = spatialCalculator_pipelines.create_stereoDepth_pipeline(enable_imu=ENABLE_IMU)
 
     detector = Detector(families=args.family,
                         nthreads=args.nthreads,
@@ -112,9 +112,9 @@ def main():
 
         depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=4, blocking=False)
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
-        # if ENABLE_IMU:
-        #     imuQueue = device.getOutputQueue(name=pipeline_info["imuQueue"], maxSize=4, blocking=False)
-        #     gyro = OakIMU(imuQueue)
+        if ENABLE_IMU:
+            imuQueue = device.getOutputQueue(name=pipeline_info["imuQueue"], maxSize=4, blocking=False)
+            gyro = OakIMU(imuQueue)
 
         # Precalculate this value to save some performance
         camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
@@ -133,10 +133,10 @@ def main():
             except Exception as e:
                 pass
 
-            # if ENABLE_IMU:
-            #     gyro.update()
-            #     angles = gyro.getImuAngles()
-            #     log.info("IMU - X: {}\tY: {}\tZ: {}".format(angles['roll'], angles['pitch'], angles['yaw']))
+            if ENABLE_IMU:
+                gyro.update()
+                angles = gyro.getImuAngles()
+                log.info("IMU - X: {}\tY: {}\tZ: {}".format(angles['roll'], angles['pitch'], angles['yaw']))
 
             if inRight is not None and inDepth is not None:
                 depthFrame = inDepth.getFrame()
@@ -159,7 +159,9 @@ def main():
                         bottomRightXY = (int(max(tag.corners[:, 0])), int(max(tag.corners[:, 1])))
 
                         roi = (topLeftXY[0], topLeftXY[1], bottomRightXY[0], bottomRightXY[1])
-                        robotAngle = math.radians(90)
+
+                        # TODO: Remove after debugging
+                        robotAngle = math.radians(0)
                         robotPose, tagTranslation, spatialData, = hostSpatials.calc_spatials(depthFrame, tag, roi, robotAngle)
 
                         # robotPose, tagTranslation = spatialCalculator.estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, frameRight.shape)
