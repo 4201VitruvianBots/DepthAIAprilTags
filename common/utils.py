@@ -1,8 +1,11 @@
+import cv2
 import depthai as dai
 import math
+import queue
+import socket
+import threading
 import time
 
-import cv2
 
 
 class FPSHandler:
@@ -95,7 +98,7 @@ class OakIMU:
         self._imuQueue = imuQueue
         self.resetIMU(roll, pitch, yaw)
 
-    def resetIMU(self, roll=0, pitch=0, yaw=0):
+    def reset(self, roll=0, pitch=0, yaw=0):
         self._roll = roll
         self._pitch = pitch
         self._yaw = yaw
@@ -141,3 +144,93 @@ class OakIMU:
             'pitch': math.degrees(self._pitch),
             'yaw': math.degrees(self._yaw)
         }
+
+
+class AndroidWirelessIMU:
+    def __init__(self, host=None, port=4201, position=True, roll=0, pitch=0, yaw=0):
+        if host is None:
+            hostname = socket.gethostname()
+            host = socket.gethostbyname(hostname)
+
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        # self._socket.settimeout(0.01)
+        self._socket.bind((host, port))
+        print("Listening to data coming into {}:{}".format(host, port))
+
+        self._position = position
+        self._lastTimestamp = 0
+        self._roll = 0
+        self._pitch = 0
+        self._yaw = 0
+        self._lastRoll = 0
+        self._lastPitch = 0
+        self._lastYaw = 0
+        self._rollOffset = 0
+        self._pitchOffset = 0
+        self._yawOffset = 0
+
+        self.reset(roll, pitch, yaw)
+
+        t = threading.Thread(target=self.update)
+        t.daemon = True
+        t.start()
+
+    def reset(self, roll=0, pitch=0, yaw=0):
+        if self._position:
+            self._rollOffset = self._lastRoll + roll
+            self._pitchOffset = self._lastPitch + pitch
+            self._yawOffset = self._lastYaw + yaw
+        else:
+            self._lastTimestamp = 0
+            self._lastRoll = 0
+            self._lastPitch = 0
+            self._lastYaw = 0
+
+    def update(self):
+        while True:
+            try:
+                message, address = self._socket.recvfrom(8192)
+            except Exception as e:
+                # print("Socket Error: {}".format(e))
+                return
+
+            if message is not None:
+                message = message.decode('utf-8')
+                print(message)
+                data = message.split(',')
+                data = [float(i) for i in data]
+                gyroData = data[6:]
+                if len(gyroData) == 0:
+                    return
+
+                timestamp = time.monotonic()
+                if self._lastTimestamp != 0:
+                    if self._position:
+                        self._roll = gyroData[2]
+                        self._pitch = gyroData[1]
+                        self._yaw = gyroData[0]
+                    else:
+                        self._roll += (self._lastRoll - gyroData[0]) / (timestamp - self._lastTimestamp)
+                        self._pitch += (self._lastPitch - gyroData[1]) / (timestamp - self._lastTimestamp)
+                        self._yaw += (self._lastYaw - gyroData[2]) / (timestamp - self._lastTimestamp)
+
+                self._lastTimestamp = timestamp
+                self._lastRoll = gyroData[2]
+                self._lastPitch  = gyroData[1]
+                self._lastYaw = gyroData[0]
+
+    def readValues(self):
+        if self._position:
+            return {
+                'roll': self._roll - self._rollOffset,
+                'pitch': self._pitch - self._pitchOffset,
+                'yaw': -(self._yaw - self._yawOffset)
+            }
+        else:
+            return {
+                'roll': math.degrees(self._roll - self._rollOffset),
+                'pitch': math.degrees(self._pitch - self._pitchOffset),
+                'yaw': -math.degrees(self._yaw - self._yawOffset)
+            }
