@@ -37,6 +37,7 @@ parser.add_argument('-dd', dest='detector_debug', action="store", type=int, defa
 parser.add_argument('-pnp', dest='apriltag_pose', action="store_true", default=False,
                     help='Enable pupil_apriltags Detector Pose Estimation')
 parser.add_argument('-imu', dest='imu', action="store_true", default=False, help='Use external IMU')
+parser.add_argument('-r', dest='record_video', action="store_true", default=False, help='Record video data')
 
 args = parser.parse_args()
 
@@ -157,7 +158,7 @@ def main():
             else:
                 robotAngle = math.radians(nt_drivetrain_tab.getNumber("Heading_Degrees", 90.0))
 
-            if inRight is not None and inDepth is not None:
+            if inDepth is not None:
                 fps.nextIter()
 
                 depthFrame = inDepth.getFrame()

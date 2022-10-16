@@ -2,7 +2,7 @@
 import depthai as dai
 
 
-def create_stereoDepth_pipeline(enable_imu=False):
+def create_stereoDepth_pipeline(enable_recording=False, enable_imu=False):
     # Start defining a pipeline
     pipeline = dai.Pipeline()
 
@@ -48,6 +48,16 @@ def create_stereoDepth_pipeline(enable_imu=False):
     monoRight.out.link(stereo.right)
     stereo.depth.link(xoutDepth.input)
 
+    encoderStr = "h265"
+    if enable_recording:
+        videoEncoder = pipeline.createVideoEncoder()
+        videoEncoder.setDefaultProfilePreset(120, dai.VideoEncoderProperties.Profile.H264_HIGH)
+        videoEncoder.setLossless(True)
+        videoOut = pipeline.create(dai.node.XLinkOut)
+        videoOut.setStreamName(encoderStr)
+        monoRight.out.link(videoEncoder.input)
+        videoEncoder.bitstream.link(videoOut.input)
+
     # imuQueueStr = "imu"
     # if enable_imu:
     #     imu = pipeline.createIMU()
@@ -65,6 +75,7 @@ def create_stereoDepth_pipeline(enable_imu=False):
         'resolution_y': monoRight.getResolutionHeight(),
         'depthQueue': depthStr,
         'monoRightQueue': monoRightStr,
+        'encoderQueue': encoderStr
         # 'imuQueue': imuQueueStr
     }
 
