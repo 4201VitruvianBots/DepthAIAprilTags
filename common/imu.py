@@ -44,7 +44,7 @@ class navX:
                 msgID = chr(msgBuffer[3])
                 bufferLen = len(msgBuffer)
 
-                if msgID == 't' and bufferLen == msgLen + 2:
+                if msgID == 'p' and bufferLen == msgLen + 2 == AHRSPOS_UPDATE_MESSAGE_LENGTH:
                     self.data['yaw'] = self.decodeProtocol1616Float(
                         msgBuffer[AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX:AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX+4])
                     self.data['pitch'] = self.decodeProtocol1616Float(
@@ -57,8 +57,35 @@ class navX:
                         msgBuffer[AHRSPOS_TS_UPDATE_ALTITUDE_VALUE_INDEX:AHRSPOS_TS_UPDATE_ALTITUDE_VALUE_INDEX + 4])
                     self.data['fused_heading'] = self.decodeProtocol1616Float(
                         msgBuffer[AHRSPOS_TS_UPDATE_FUSED_HEADING_VALUE_INDEX:AHRSPOS_TS_UPDATE_FUSED_HEADING_VALUE_INDEX + 4])
-                    self.data['timestamp'] = self.decodeProtocol1616Float(
+                    self.data['timestamp'] = self.decodeBinaryUint32(
                         msgBuffer[AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX:AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX + 4])
+
+                if msgID == 't' and bufferLen == msgLen + 2 == AHRSPOS_TS_UPDATE_MESSAGE_LENGTH:
+                    self.data['yaw'] = self.decodeProtocol1616Float(
+                        msgBuffer[AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX:AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX+4])
+                    self.data['pitch'] = self.decodeProtocol1616Float(
+                        msgBuffer[AHRSPOS_TS_UPDATE_PITCH_VALUE_INDEX:AHRSPOS_TS_UPDATE_PITCH_VALUE_INDEX + 4])
+                    self.data['roll'] = self.decodeProtocol1616Float(
+                        msgBuffer[AHRSPOS_TS_UPDATE_ROLL_VALUE_INDEX:AHRSPOS_TS_UPDATE_ROLL_VALUE_INDEX + 4])
+                    self.data['compass_heading'] = self.decodeProtocol1616Float(
+                        msgBuffer[AHRSPOS_TS_UPDATE_HEADING_VALUE_INDEX:AHRSPOS_TS_UPDATE_HEADING_VALUE_INDEX + 4])
+                    self.data['altitude'] = self.decodeProtocol1616Float(
+                        msgBuffer[AHRSPOS_TS_UPDATE_ALTITUDE_VALUE_INDEX:AHRSPOS_TS_UPDATE_ALTITUDE_VALUE_INDEX + 4])
+                    self.data['fused_heading'] = self.decodeProtocol1616Float(
+                        msgBuffer[AHRSPOS_TS_UPDATE_FUSED_HEADING_VALUE_INDEX:AHRSPOS_TS_UPDATE_FUSED_HEADING_VALUE_INDEX + 4])
+                    self.data['timestamp'] = self.decodeBinaryUint32(
+                        msgBuffer[AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX:AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX + 4])
+                else:
+                    print("Error - Could not proces message. msgId: '{}' msgLen: {} bufferLen: {}".format(msgID, msgLen, bufferLen))
+                    pass
+
+    def decodeBinaryUint16(self, buffer):
+        return buffer[1] << 8 | buffer[0]
+
+    def decodeProtocolSignedHundredthsFloat(self, buffer):
+        result = self.decodeBinaryUint16(buffer)
+        bits = '{:032b}'.format(result)
+
 
     def decodeBinaryUint32(self, buffer):
         return buffer[3] << 24 | buffer[2] << 16 | buffer[1] << 8 | buffer[0]

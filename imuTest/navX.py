@@ -4,5 +4,6 @@ navX = imu.navX()
 
 while True:
     yaw = navX.get("yaw")
+    timestamp = navX.get("timestamp")
 
-    print("Yaw: {}".format(yaw))
+    print("Timestamp: {} Yaw: {}".format(timestamp, yaw))
