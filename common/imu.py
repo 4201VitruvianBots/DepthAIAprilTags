@@ -15,6 +15,7 @@ class navX:
         t = threading.Thread(target=self.update)
         t.daemon = True
         t.start()
+        # self.update()
 
     def update(self):
         WRITE_TO_BUFFER = False
@@ -44,23 +45,20 @@ class navX:
                 msgID = chr(msgBuffer[3])
                 bufferLen = len(msgBuffer)
 
-                if msgID == 'p' and bufferLen == msgLen + 2 == AHRSPOS_UPDATE_MESSAGE_LENGTH:
-                    self.data['yaw'] = self.decodeProtocol1616Float(
+                if msgID == 'p' and bufferLen == (msgLen + 2) == AHRSPOS_UPDATE_MESSAGE_LENGTH:
+                    self.data['yaw'] = self.decodeProtocolSignedHundredthsFloat(
                         msgBuffer[AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX:AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX+4])
-                    self.data['pitch'] = self.decodeProtocol1616Float(
+                    self.data['pitch'] = self.decodeProtocolSignedHundredthsFloat(
                         msgBuffer[AHRSPOS_TS_UPDATE_PITCH_VALUE_INDEX:AHRSPOS_TS_UPDATE_PITCH_VALUE_INDEX + 4])
-                    self.data['roll'] = self.decodeProtocol1616Float(
+                    self.data['roll'] = self.decodeProtocolSignedHundredthsFloat(
                         msgBuffer[AHRSPOS_TS_UPDATE_ROLL_VALUE_INDEX:AHRSPOS_TS_UPDATE_ROLL_VALUE_INDEX + 4])
-                    self.data['compass_heading'] = self.decodeProtocol1616Float(
+                    self.data['compass_heading'] = self.decodeProtocolUnsignedHundredthsFloat(
                         msgBuffer[AHRSPOS_TS_UPDATE_HEADING_VALUE_INDEX:AHRSPOS_TS_UPDATE_HEADING_VALUE_INDEX + 4])
                     self.data['altitude'] = self.decodeProtocol1616Float(
                         msgBuffer[AHRSPOS_TS_UPDATE_ALTITUDE_VALUE_INDEX:AHRSPOS_TS_UPDATE_ALTITUDE_VALUE_INDEX + 4])
-                    self.data['fused_heading'] = self.decodeProtocol1616Float(
+                    self.data['fused_heading'] = self.decodeProtocolUnsignedHundredthsFloat(
                         msgBuffer[AHRSPOS_TS_UPDATE_FUSED_HEADING_VALUE_INDEX:AHRSPOS_TS_UPDATE_FUSED_HEADING_VALUE_INDEX + 4])
-                    self.data['timestamp'] = self.decodeBinaryUint32(
-                        msgBuffer[AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX:AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX + 4])
-
-                if msgID == 't' and bufferLen == msgLen + 2 == AHRSPOS_TS_UPDATE_MESSAGE_LENGTH:
+                elif msgID == 't' and bufferLen == (msgLen + 2) == AHRSPOS_TS_UPDATE_MESSAGE_LENGTH:
                     self.data['yaw'] = self.decodeProtocol1616Float(
                         msgBuffer[AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX:AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX+4])
                     self.data['pitch'] = self.decodeProtocol1616Float(
@@ -84,8 +82,16 @@ class navX:
 
     def decodeProtocolSignedHundredthsFloat(self, buffer):
         result = self.decodeBinaryUint16(buffer)
-        bits = '{:032b}'.format(result)
+        bits = '{:016b}'.format(result)
 
+        if bits[0] == '1':
+            return -1 * (2**16 - result) / 100.0
+        else:
+            return result / 100.0
+
+    def decodeProtocolUnsignedHundredthsFloat(self, buffer):
+        result = self.decodeBinaryUint16(buffer)
+        return result / 100.0
 
     def decodeBinaryUint32(self, buffer):
         return buffer[3] << 24 | buffer[2] << 16 | buffer[1] << 8 | buffer[0]
