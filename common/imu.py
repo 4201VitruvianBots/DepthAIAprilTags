@@ -8,9 +8,11 @@ from .AHRSProtocol import *
 
 
 class navX:
-    def __init__(self):
-        self.s = serial.Serial('COM4')
+    def __init__(self, port='COM4'):
+        self.s = serial.Serial(port)
         self.data = dict()
+        self.offsets = dict()
+        self.dataKeys = ['pitch', 'roll', 'yaw', 'compass_heading', 'fused_heading', 'altitude']
 
         t = threading.Thread(target=self.update)
         t.daemon = True
@@ -128,9 +130,17 @@ class navX:
 
     def get(self, keyValue):
         if keyValue not in self.data.keys():
-            pass
+            return None
         else:
-            return self.data[keyValue]
+            if keyValue in self.offsets.keys():
+                return self.data[keyValue] - self.offsets[keyValue]
+            else:
+                return self.data[keyValue]
+
+    def reset(self):
+        for k in self.data.keys():
+            if k in self.dataKeys:
+                self.offsets[k] = self.data[k]
 
 
 class OakIMU:

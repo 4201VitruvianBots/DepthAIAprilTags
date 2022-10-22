@@ -124,8 +124,9 @@ def main():
         device.setIrLaserDotProjectorBrightness(200)
         # device.setIrFloodLightBrightness(1500)
 
-        depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=4, blocking=False)
-        qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
+        depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=1, blocking=False)
+        qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=1, blocking=False)
+
         if USE_EXTERNAL_IMU:
             gyro = navX()
 
@@ -139,6 +140,7 @@ def main():
             'pitch': None,
             'yaw': None
         }
+
         while True:
             try:
                 inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
@@ -155,6 +157,7 @@ def main():
                         'yaw': math.radians(-gyro.get('yaw'))
                     }
                 except Exception as e:
+                    log.error("Could not grab gyro values")
                     pass
             else:
                 robotAngle = math.radians(nt_drivetrain_tab.getNumber("Heading_Degrees", 90.0))
@@ -225,7 +228,7 @@ def main():
                                                                            tagInfo['deltaTranslation']['z']))
 
                     # Merge AprilTag measurements to estimate
-                    if len(detectedTags) > 1:
+                    if len(detectedTags) > 0:
                         avg_x = sum(x_pos) / len(x_pos)
                         avg_y = sum(y_pos) / len(y_pos)
                         avg_z = sum(z_pos) / len(z_pos)

@@ -60,18 +60,6 @@ def create_stereoDepth_pipeline(enable_recording=False, enable_imu=False):
         monoRight.out.link(videoEncoder.input)
         videoEncoder.bitstream.link(videoOut.input)
 
-    # imuQueueStr = "imu"
-    # if enable_imu:
-    #     imu = pipeline.createIMU()
-    #     imu.enableIMUSensor([dai.IMUSensor.GYROSCOPE_RAW], 100)
-    #
-    #     imu.setBatchReportThreshold(1)
-    #     imu.setMaxBatchReports(10)
-    #
-    #     xoutIMU = pipeline.createXLinkOut()
-    #     xoutIMU.setStreamName(imuQueueStr)
-    #     imu.out.link(xoutIMU.input)
-
     pipeline_info = {
         'resolution_x': monoRight.getResolutionWidth(),
         'resolution_y': monoRight.getResolutionHeight(),
