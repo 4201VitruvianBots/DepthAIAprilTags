@@ -9,7 +9,7 @@ from common import constants
 from common import utils
 import spatialCalculator_pipelines
 
-from common.utils import AndroidWirelessIMU
+from common.imu import navX
 from networktables.util import NetworkTables
 from pupil_apriltags import Detector
 from spatialCalculator import HostSpatialsCalc
@@ -89,6 +89,7 @@ def main():
     nt_drivetrain_tab = NetworkTables.getTable("Drivetrain")
 
     fps = utils.FPSHandler()
+    latency = np.array([])
 
     with dai.Device(pipeline) as device:
         log.info("USB SPEED: {}".format(device.getUsbSpeed()))
@@ -126,7 +127,7 @@ def main():
         depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=4, blocking=False)
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=4, blocking=False)
         if USE_EXTERNAL_IMU:
-            gyro = AndroidWirelessIMU()
+            gyro = navX()
 
         # Precalculate this value to save some performance
         camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
@@ -142,7 +143,7 @@ def main():
         while True:
             try:
                 inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
-                inRight = qRight.tryGet()
+                inRight = qRight.get()
             except Exception as e:
                 log.error("Frame not received")
                 continue
@@ -150,17 +151,17 @@ def main():
             if USE_EXTERNAL_IMU:
                 try:
                     # gyro.update()
-                    angles = gyro.readValues()
-                    log.info("IMU - X: {}\tY: {}\tZ: {}".format(angles['roll'], angles['pitch'], angles['yaw']))
-                    robotAngle = -math.radians(angles['yaw'])
+                    roll = gyro.get("roll")
+                    pitch = gyro.get("pitch")
+                    yaw = gyro.get("yaw")
+                    log.info("IMU - X: {}\tY: {}\tZ: {}".format(roll, pitch, yaw))
+                    robotAngle = -math.radians(yaw)
                 except Exception as e:
                     pass
             else:
                 robotAngle = math.radians(nt_drivetrain_tab.getNumber("Heading_Degrees", 90.0))
 
             if inDepth is not None:
-                fps.nextIter()
-
                 depthFrame = inDepth.getFrame()
                 frameRight = inRight.getCvFrame()  # get mono right frame
 
@@ -282,9 +283,14 @@ def main():
                             cv2.rectangle(frameRight, detectedTag["topLeftXY"], detectedTag["bottomRightXY"],
                                           (0, 0, 0), 3)
 
+            fps.nextIter()
+            latencyMs = (dai.Clock.now() - inDepth.getTimestamp()).total_seconds() * 1000.0
+            latency = np.append(latency, latencyMs)
+            avgLatency = np.average(latency) if len(latency) < 100 else np.average(latency[-100:])
             if not DISABLE_VIDEO_OUTPUT and depthFrame is not None and frameRight is not None:
                 cv2.circle(frameRight, (int(frameRight.shape[1]/2), int(frameRight.shape[0]/2)), 1, (255, 255, 255), 1)
-                cv2.putText(frameRight, "{:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
+                cv2.putText(frameRight, "FPS: {:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
+                cv2.putText(frameRight, "Latency: {:.2f}ms".format(avgLatency), (0, 48), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
                 if USE_EXTERNAL_IMU:
                     cv2.putText(frameRight, "{:.2f}".format(robotAngle), (0, 48), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
@@ -297,6 +303,8 @@ def main():
 
                 cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
             else:
+                latencyStd = np.std(latency) if len(latency) < 100 else np.std(latency[-100:])
+                print('Latency: {:.2f} ms, Std: {:.2f}'.format(avgLatency, np.std(latencyStd)))
                 print("FPS: {:.2f}".format(fps.fps()))
 
             key = cv2.waitKey(1)

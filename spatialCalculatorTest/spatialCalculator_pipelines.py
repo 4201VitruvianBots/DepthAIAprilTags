@@ -6,6 +6,8 @@ def create_stereoDepth_pipeline(enable_recording=False, enable_imu=False):
     # Start defining a pipeline
     pipeline = dai.Pipeline()
 
+    pipeline.setXLinkChunkSize(0)
+
     # Define a source - two mono (grayscale) cameras
     monoLeft = pipeline.createMonoCamera()
     monoRight = pipeline.createMonoCamera()
