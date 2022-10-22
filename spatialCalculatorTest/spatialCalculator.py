@@ -13,7 +13,7 @@ class HostSpatialsCalc:
         # Required information for calculating spatial coordinates on the host
         self.monoHFOV = np.deg2rad(camera_params['hfov'])
         self.monoVFOV = np.deg2rad(camera_params['vfov'])
-        self.mmountAngle = camera_params['mount_angle_radians']
+        self.mountAngle = camera_params['mount_angle_radians']
 
         # Values
         self.DELTA = 5
@@ -45,7 +45,7 @@ class HostSpatialsCalc:
         return math.atan(math.tan(self.monoVFOV / 2.0) * offset / (frame.shape[0] / 2.0))
 
     # roi has to be list of ints
-    def calc_spatials(self, depthFrame, tag, roi, robot_angle=0, averaging_method=np.mean):
+    def calc_spatials(self, depthFrame, tag, roi, robotAngles, averaging_method=np.mean):
         if tag.tag_id not in TAG_DICTIONARY.keys():
             return None, None, None
 
@@ -65,8 +65,8 @@ class HostSpatialsCalc:
             'y': tag.center[1]
         }
 
-        midW = int(depthFrame.shape[1] / 2)  # middle of the depth img width
-        midH = int(depthFrame.shape[0] / 2)  # middle of the depth img height
+        midW = int(depthFrame.shape[1] / 2.0)  # middle of the depth img width
+        midH = int(depthFrame.shape[0] / 2.0)  # middle of the depth img height
         bb_x_pos = centroid['x'] - midW
         bb_y_pos = centroid['y'] - midH
 
@@ -74,22 +74,23 @@ class HostSpatialsCalc:
         angle_y = -self._calc_v_angle(depthFrame, bb_y_pos)
 
         spatials = {
-            'z': averageDepth / 1000,
-            'x': averageDepth * math.tan(angle_x) / 1000,
-            'y': -averageDepth * math.tan(angle_y) / 1000,
+            'z': averageDepth / 1000.0,
+            'x': averageDepth * math.tan(angle_x) / 1000.0,
+            'y': -averageDepth * math.tan(angle_y) / 1000.0
         }
-
-        xy_target_distance = math.cos(self.mmountAngle + angle_y) * spatials['z']
+        camera_angle = self.mountAngle if robotAngles['pitch'] is None else robotAngles['pitch']
+        xy_target_distance = math.cos(camera_angle + angle_y) * spatials['z']
 
         tag_translation = {
             'x': math.cos(angle_x) * xy_target_distance,
             'y': -math.sin(angle_x) * xy_target_distance,
-            'z': math.sin(self.mmountAngle + angle_y) * spatials['z'],
+            'z': math.sin(camera_angle + angle_y) * spatials['z'],
             'x_angle': math.degrees(angle_x),
             'y_angle': math.degrees(angle_y)
         }
 
-        rotatedTranslation = mathUtils.rotateTranslation((tag_translation['x'], tag_translation['y']), robot_angle)
+        camera_yaw = 0 if robotAngles['yaw'] is None else robotAngles['yaw']
+        rotatedTranslation = mathUtils.rotateTranslation((tag_translation['x'], tag_translation['y']), camera_yaw)
 
         robotPose = {
             'x': tagPose['x'] - rotatedTranslation[0],
