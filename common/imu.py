@@ -1,5 +1,6 @@
 import depthai as dai
 import math
+import queue
 import serial
 import socket
 import threading
@@ -14,40 +15,86 @@ class navX:
         self.offsets = dict()
         self.dataKeys = ['pitch', 'roll', 'yaw', 'compass_heading', 'fused_heading', 'altitude']
 
-        t = threading.Thread(target=self.update)
-        t.daemon = True
-        t.start()
-        # self.update()
+        # t = threading.Thread(target=self.update)
+        # t.daemon = True
+        # t.start()
+        self.update()
+
+    def get(self, keyValue):
+        if keyValue not in self.data.keys():
+            return None
+        else:
+            if keyValue in self.offsets.keys():
+                return self.data[keyValue] - self.offsets[keyValue]
+            else:
+                return self.data[keyValue]
+
+    def reset(self):
+        # resetMsg = '!#I{:01b}{:04b}{:02b}\r\n'.format(NAVX_INTEGRATION_CTL_RESET_YAW, 0, 0)
+        resetMsg = b'!#%bI%b' % (INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2), NAVX_INTEGRATION_CTL_RESET_YAW
+
+        resetMsg = self.encoderTermination(resetMsg)
+
+        self.s.write(resetMsg.encode())
+
+    # def listenThread(self):
+    #     readBuffer = bytearray()
+    #     readIdx = 0
+    #
+    #     while True:
+    #         serialData = self.s.read(256)
+    #
+    #         readBuffer += serialData
+    #
+    #         while True:
+    #             if readBuffer[readIdx] == ord(PACKET_START_CHAR) and readBuffer[readIdx + 1] == ord('#'):
+    #                 READ_MSG = True
+    #                 break
+    #             readIdx += 1
+
+    # def readThread(self):
+
 
     def update(self):
-        WRITE_TO_BUFFER = False
+        DECODE_MSG = False
         READ_MSG = False
 
         readBuffer = bytearray()
         msgBuffer = bytearray()
-
+        msgQueue = []
+        readIdx = 0
         while True:
-            serialData = self.s.read()
+            serialData = self.s.read(256)
 
-            if serialData == PACKET_START_CHAR:
+            readBuffer += serialData
+
+            # while True:
+            #     if readBuffer[readIdx] == ord(PACKET_START_CHAR) and readBuffer[readIdx + 1] == ord('#'):
+            #         READ_MSG = True
+            #         break
+            #     readIdx += 1
+
+            READ_MSG = True
+            while READ_MSG:
                 # print('Got New Packet')
-                WRITE_TO_BUFFER = True
+                if len(readBuffer) < 3:
+                    break
 
-            if WRITE_TO_BUFFER:
-                readBuffer += serialData
+                msgLen = readBuffer[2]
 
-                if readBuffer[-1] == ord('\n') and readBuffer[-2] == ord('\r'):
-                    WRITE_TO_BUFFER = False
-                    msgBuffer = readBuffer
-                    readBuffer = bytearray()
-                    READ_MSG = True
+                if msgLen > len(readBuffer):
+                    break
 
-            if READ_MSG:
-                msgLen = msgBuffer[2]
-                msgID = chr(msgBuffer[3])
-                bufferLen = len(msgBuffer)
+                msgID = chr(readBuffer[3])
 
-                if msgID == 'p' and bufferLen == (msgLen + 2) == AHRSPOS_UPDATE_MESSAGE_LENGTH:
+                msgBuffer = readBuffer[:msgLen + 2]
+                readBuffer = readBuffer[msgLen + 2:]
+                if msgBuffer[-1] == ord('\n') and msgBuffer[-2] == ord('\r'):
+                    msgQueue.append(msgBuffer)
+
+            while len(msgQueue) > 0:
+                msgBuffer = msgQueue.pop(0)
+                if msgID == 'p' and (msgLen + 2) == AHRSPOS_UPDATE_MESSAGE_LENGTH:
                     self.data['yaw'] = self.decodeProtocolSignedHundredthsFloat(
                         msgBuffer[AHRSPOS_UPDATE_YAW_VALUE_INDEX:AHRSPOS_UPDATE_YAW_VALUE_INDEX+2])
                     self.data['pitch'] = self.decodeProtocolSignedHundredthsFloat(
@@ -60,7 +107,7 @@ class navX:
                         msgBuffer[AHRSPOS_UPDATE_ALTITUDE_VALUE_INDEX:AHRSPOS_UPDATE_ALTITUDE_VALUE_INDEX + 4])
                     self.data['fused_heading'] = self.decodeProtocolUnsignedHundredthsFloat(
                         msgBuffer[AHRSPOS_UPDATE_FUSED_HEADING_VALUE_INDEX:AHRSPOS_UPDATE_FUSED_HEADING_VALUE_INDEX + 2])
-                elif msgID == 't' and bufferLen == (msgLen + 2) == AHRSPOS_TS_UPDATE_MESSAGE_LENGTH:
+                elif msgID == 't' and (msgLen + 2) == AHRSPOS_TS_UPDATE_MESSAGE_LENGTH:
                     self.data['yaw'] = self.decodeProtocol1616Float(
                         msgBuffer[AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX:AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX+4])
                     self.data['pitch'] = self.decodeProtocol1616Float(
@@ -76,7 +123,7 @@ class navX:
                     self.data['timestamp'] = self.decodeBinaryUint32(
                         msgBuffer[AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX:AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX + 4])
                 else:
-                    print("Error - Could not proces message. msgId: '{}' msgLen: {} bufferLen: {}".format(msgID, msgLen, bufferLen))
+                    print("Error - Could not process message. msgId: '{}' msgLen: {}".format(msgID, msgLen))
                     pass
 
     def decodeBinaryUint16(self, buffer):
@@ -128,19 +175,20 @@ class navX:
 
         return exponent + mantissa
 
-    def get(self, keyValue):
-        if keyValue not in self.data.keys():
-            return None
-        else:
-            if keyValue in self.offsets.keys():
-                return self.data[keyValue] - self.offsets[keyValue]
-            else:
-                return self.data[keyValue]
+    def byteToHex(self, byte):
+        return byte & 0xFF
 
-    def reset(self):
-        for k in self.data.keys():
-            if k in self.dataKeys:
-                self.offsets[k] = self.data[k]
+    def encoderTermination(self, buffer):
+        checksum = 0
+        for i in buffer:
+            if isinstance(i, int):
+                checksum += i
+            else:
+                checksum += ord(i)
+
+        hex = self.byteToHex(checksum)
+        buffer = b'{}%b%b\r\n' % buffer, hex >> 4, hex & 0x0F
+        return buffer
 
 
 class OakIMU:
