@@ -90,12 +90,12 @@ class HostSpatialsCalc:
         }
 
         camera_yaw = 0 if robotAngles['yaw'] is None else robotAngles['yaw']
-        rotatedTranslation = mathUtils.rotateTranslation((tag_translation['x'], tag_translation['y']), camera_yaw)
+        rotatedTranslation = mathUtils.rotateTranslation((tag_translation['x'], tag_translation['y']), camera_yaw + angle_x)
 
         robotPose = {
             'x': tagPose['x'] - rotatedTranslation[0],
-            'y': tagPose['y'] - rotatedTranslation[1],
-            'z': tagPose['z'] - tag_translation['z']
+            'y': tagPose['y'] + rotatedTranslation[1],
+            'z': tagPose['z'] + tag_translation['z']
         }
 
         return robotPose, tag_translation, spatials

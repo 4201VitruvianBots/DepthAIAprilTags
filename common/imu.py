@@ -12,19 +12,72 @@ class navX:
         self.s = serial.Serial(port)
         self.data = dict()
         self.offsets = dict()
-        self.dataKeys = ['pitch', 'roll', 'yaw', 'compass_heading', 'fused_heading', 'altitude']
 
         t = threading.Thread(target=self.update)
         t.daemon = True
         t.start()
+        # self.resetYaw()
+        # self.resetAll()
         # self.update()
+
+    def get(self, keyValue):
+        if keyValue not in self.data.keys():
+            return None
+        else:
+            return self.data[keyValue]
+
+    def resetYaw(self):
+        # TODO: Fix this to be not hard-coded. Main issue is generating proper checksum from message
+        resetMsg = bytearray(b''.join(b'\x00' for i in range(13)))
+        resetMsg[0] = ord('!')
+        resetMsg[1] = ord('#')
+        resetMsg[2] = INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2
+        resetMsg[3] = ord('I')
+        resetMsg[4] = NAVX_INTEGRATION_CTL_RESET_YAW
+
+        checksum = sum(resetMsg[:-4])
+        checksumHex = self.byteToHex(checksum)
+        # resetMsg[-4] = checksumHex >> 4
+        # resetMsg[-3] = checksumHex & 0x0F
+        resetMsg[-4:-2] = b'18'
+        resetMsg[-2] = ord('\r')
+        resetMsg[-1] = ord('\n')
+        # resetMsg = '!#I{:01b}{:04b}{:02b}\r\n'.format(NAVX_INTEGRATION_CTL_RESET_YAW, 0, 0)
+        # resetMsg = b'!#%bI%b' % ((INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2).to_bytes(1, byteorder='big'), NAVX_INTEGRATION_CTL_RESET_YAW.to_bytes(2, byteorder='big'))
+
+        # resetMsg = self.encoderTermination(resetMsg)
+        self.s.write(resetMsg)
+
+    def resetAll(self):
+        resetMsg = bytearray(b''.join(b'\x00' for i in range(13)))
+        resetMsg[0] = ord('!')
+        resetMsg[1] = ord('#')
+        resetMsg[2] = INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2
+        resetMsg[3] = ord('I')
+        resetMsg[4] = NAVX_INTEGRATION_CTL_RESET_YAW | NAVX_INTEGRATION_CTL_RESET_VEL_X | \
+                      NAVX_INTEGRATION_CTL_RESET_VEL_Y | NAVX_INTEGRATION_CTL_RESET_VEL_Z | \
+                      NAVX_INTEGRATION_CTL_RESET_DISP_X | NAVX_INTEGRATION_CTL_RESET_DISP_Y | \
+                      NAVX_INTEGRATION_CTL_RESET_DISP_Z
+
+        checksum = sum(resetMsg[:-4])
+        checksumHex = self.byteToHex(checksum)
+        # resetMsg[-4] = checksumHex >> 4
+        # resetMsg[-3] = checksumHex & 0x0F
+        resetMsg[-4:-2] = b'57'
+        resetMsg[-2] = ord('\r')
+        resetMsg[-1] = ord('\n')
+        # resetMsg = '!#I{:01b}{:04b}{:02b}\r\n'.format(NAVX_INTEGRATION_CTL_RESET_YAW, 0, 0)
+        # resetMsg = b'!#%bI%b' % ((INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2).to_bytes(1, byteorder='big'), NAVX_INTEGRATION_CTL_RESET_YAW.to_bytes(2, byteorder='big'))
+
+        # resetMsg = self.encoderTermination(resetMsg)
+        self.s.write(resetMsg)
 
     def update(self):
         WRITE_TO_BUFFER = False
         READ_MSG = False
 
-        readBuffer = bytearray()
         msgBuffer = bytearray()
+        readBuffer = bytearray()
 
         while True:
             serialData = self.s.read()
@@ -36,11 +89,18 @@ class navX:
             if WRITE_TO_BUFFER:
                 readBuffer += serialData
 
-                if readBuffer[-1] == ord('\n') and readBuffer[-2] == ord('\r'):
-                    WRITE_TO_BUFFER = False
-                    msgBuffer = readBuffer
-                    readBuffer = bytearray()
-                    READ_MSG = True
+                if len(readBuffer) > 1:
+                    if readBuffer[0] == ord(PACKET_START_CHAR) and readBuffer[1] != ord(BINARY_PACKET_INDICATOR_CHAR):
+                        readBuffer = bytearray()
+                        WRITE_TO_BUFFER = False
+                    elif readBuffer[-1] == ord('\n') and readBuffer[-2] == ord('\r'):
+                        WRITE_TO_BUFFER = False
+                        msgBuffer = readBuffer
+                        readBuffer = bytearray()
+                        READ_MSG = True
+                    elif len(readBuffer) > 100:
+                        readBuffer = bytearray()
+                        WRITE_TO_BUFFER = False
 
             if READ_MSG:
                 msgLen = msgBuffer[2]
@@ -75,9 +135,13 @@ class navX:
                         msgBuffer[AHRSPOS_TS_UPDATE_FUSED_HEADING_VALUE_INDEX:AHRSPOS_TS_UPDATE_FUSED_HEADING_VALUE_INDEX + 4])
                     self.data['timestamp'] = self.decodeBinaryUint32(
                         msgBuffer[AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX:AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX + 4])
+                elif msgID == 'j' and bufferLen == (msgLen + 2) == INTEGRATION_CONTROL_RESP_MESSAGE_LENGTH:
+                    print("Received reset message response")
                 else:
-                    print("Error - Could not proces message. msgId: '{}' msgLen: {} bufferLen: {}".format(msgID, msgLen, bufferLen))
+                    # print("Error - Could not process message. msgId: '{}' msgLen: {} bufferLen: {}".format(msgID, msgLen, bufferLen))
                     pass
+
+                READ_MSG = False
 
     def decodeBinaryUint16(self, buffer):
         return buffer[1] << 8 | buffer[0]
@@ -128,19 +192,20 @@ class navX:
 
         return exponent + mantissa
 
-    def get(self, keyValue):
-        if keyValue not in self.data.keys():
-            return None
-        else:
-            if keyValue in self.offsets.keys():
-                return self.data[keyValue] - self.offsets[keyValue]
-            else:
-                return self.data[keyValue]
+    def byteToHex(self, byte):
+        return byte & 0xFF
 
-    def reset(self):
-        for k in self.data.keys():
-            if k in self.dataKeys:
-                self.offsets[k] = self.data[k]
+    def encoderTermination(self, buffer):
+        checksum = 0
+        for i in buffer:
+            if isinstance(i, int):
+                checksum += i
+            else:
+                checksum += ord(i)
+
+        hex = self.byteToHex(checksum)
+        buffer += b'%b%b\r\n' % ((hex >> 4).to_bytes(1, byteorder='big'), (hex & 0x0F).to_bytes(1, byteorder='big'))
+        return buffer
 
 
 class OakIMU:

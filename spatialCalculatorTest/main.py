@@ -4,10 +4,15 @@ import depthai as dai
 import logging
 import math
 import numpy as np
+from PyQt5 import QtWidgets, uic
+import sys
 
-from common import constants
+from qtpy import QtGui
+
+from common import constants, mathUtils
 from common import utils
 import spatialCalculator_pipelines
+from common.constants import TAG_DICTIONARY
 
 from common.imu import navX
 from networktables.util import NetworkTables
@@ -128,7 +133,7 @@ def main():
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=1, blocking=False)
 
         if USE_EXTERNAL_IMU:
-            gyro = navX()
+            gyro = navX('COM13')
 
         # Precalculate this value to save some performance
         camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
@@ -141,6 +146,11 @@ def main():
             'yaw': None
         }
 
+        if not DISABLE_VIDEO_OUTPUT:
+            app = QtWidgets.QApplication(sys.argv)
+            testGui = DebugWindow(gyro)
+            # app.exec_()
+
         while True:
             try:
                 inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
@@ -151,16 +161,20 @@ def main():
 
             if USE_EXTERNAL_IMU:
                 try:
-                    gyro.update()
                     robotAngles = {
                         'pitch': math.radians(gyro.get('pitch')),
-                        'yaw': math.radians(-gyro.get('yaw'))
+                        'yaw': math.radians(gyro.get('yaw'))
                     }
+                    if not DISABLE_VIDEO_OUTPUT:
+                        testGui.updateYawValue(math.degrees(-robotAngles['yaw']))
+                        testGui.updatePitchValue(math.degrees(robotAngles['pitch']))
                 except Exception as e:
-                    log.error("Could not grab gyro values")
+                    # log.error("Could not grab gyro values")
                     pass
             else:
-                robotAngle = math.radians(nt_drivetrain_tab.getNumber("Heading_Degrees", 90.0))
+                robotAngles = {
+                    'yaw': math.radians(nt_drivetrain_tab.getNumber("Heading_Degrees", 90.0))
+                }
 
             depthFrame = inDepth.getFrame()
             frameRight = inRight.getCvFrame()  # get mono right frame
@@ -175,10 +189,19 @@ def main():
                 x_pos = []
                 y_pos = []
                 z_pos = []
+                pnp_tag_id = []
+                pnp_x_pos = []
+                pnp_y_pos = []
+                pnp_z_pos = []
                 pose_id = []
 
                 for tag in tags:
-                    if tag.decision_margin < 50:
+                    # if tag.tag_id != 3 and tag.tag_id != 1:
+                    #     continue
+                    if not DISABLE_VIDEO_OUTPUT:
+                        if tag.tag_id not in testGui.getTagFilter():
+                            continue
+                    if tag.decision_margin < 30:
                         log.warning("Tag {} found, but not valid".format(tag.tag_id))
                         continue
 
@@ -221,6 +244,25 @@ def main():
                             'y': tag.pose_t[1][0] - spatialData['y'],
                             'z': tag.pose_t[2][0] - spatialData['z']
                         }
+
+                        tagPose = TAG_DICTIONARY[tag.tag_id]["pose"]
+
+                        camera_pitch = camera_params['mount_angle_radians'] if robotAngles['pitch'] is None else robotAngles['pitch']
+                        xy_target_distance = math.cos(camera_pitch + math.radians(tagTranslation['y_angle'])) * tag.pose_t[2][0]
+                        x_translation = math.cos(math.radians(tagTranslation['x_angle'])) * xy_target_distance
+                        y_translation = -math.sin(math.radians(tagTranslation['x_angle'])) * xy_target_distance
+                        camera_yaw = 0 if robotAngles['yaw'] is None else robotAngles['yaw']
+                        rotatedTranslation = mathUtils.rotateTranslation((x_translation, y_translation),
+                                                                         (camera_yaw + math.radians(tagTranslation['x_angle'])))
+
+                        pnpRobotPose = {
+                            'x': tagPose["x"] - rotatedTranslation[0],
+                            'y': tagPose["y"] + rotatedTranslation[1],
+                        }
+                        pnp_tag_id.append(tag.tag_id)
+                        pnp_x_pos.append(pnpRobotPose['x'])
+                        pnp_y_pos.append(pnpRobotPose['y'])
+
                         log.info("Tag ID: {}\tDelta X: {:.2f}\t"
                                  "Delta Y: {:.2f}\tDelta Z: {:.2f}".format(tag.tag_id,
                                                                            tagInfo['deltaTranslation']['x'],
@@ -237,10 +279,18 @@ def main():
                                                                                   np.std(y_pos),
                                                                                   np.std(z_pos)))
 
+                        nt_depthai_tab.putNumber("Avg X Pose", avg_x)
+                        nt_depthai_tab.putNumber("Avg Y Pose", avg_y)
+                        nt_depthai_tab.putNumber("Heading Pose", 0 if robotAngles['yaw'] is None else robotAngles['yaw'])
+
                     nt_depthai_tab.putNumberArray("Pose ID", pose_id)
                     nt_depthai_tab.putNumberArray("X Poses", x_pos)
                     nt_depthai_tab.putNumberArray("Y Poses", y_pos)
                     nt_depthai_tab.putNumberArray("Z Poses", z_pos)
+
+                    nt_depthai_tab.putNumberArray("PnP Pose ID", pnp_tag_id)
+                    nt_depthai_tab.putNumberArray("PnP X Poses", pnp_x_pos)
+                    nt_depthai_tab.putNumberArray("PnP Y Poses", pnp_y_pos)
 
                     for detectedTag in detectedTags:
                         points = detectedTag["corners"].astype(np.int32)
@@ -295,16 +345,13 @@ def main():
                 cv2.putText(frameRight, "FPS: {:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
                 cv2.putText(frameRight, "Latency: {:.2f}ms".format(avgLatency), (0, 50), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
-                if USE_EXTERNAL_IMU:
-                    cv2.putText(frameRight, "{:.2f}".format(robotAngle), (0, 48), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
-
-                cv2.imshow(pipeline_info["monoRightQueue"], frameRight)
-
                 depthFrameColor = cv2.normalize(depthFrame, None, 255, 0, cv2.NORM_INF, cv2.CV_8UC1)
                 depthFrameColor = cv2.equalizeHist(depthFrameColor)
                 depthFrameColor = cv2.applyColorMap(depthFrameColor, cv2.COLORMAP_HOT)
 
-                cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
+                # cv2.imshow(pipeline_info["monoRightQueue"], frameRight)
+                # cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
+                testGui.updateFrames(frameRight, depthFrameColor)
             else:
                 latencyStd = np.std(latency) if len(latency) < 100 else np.std(latency[-100:])
                 print('Latency: {:.2f} ms, Std: {:.2f}'.format(avgLatency, np.std(latencyStd)))
@@ -316,6 +363,78 @@ def main():
             elif key == ord(' '):
                 if 'gyro' in locals():
                     gyro.reset()
+
+
+class DebugWindow(QtWidgets.QWidget):
+    def __init__(self, gyro):
+        super(DebugWindow, self).__init__()
+        uic.loadUi('../designer/debugWindow.ui', self)
+        self.tagFilter = list(range(1, 5))
+        self.tagCheckbox1.stateChanged.connect(lambda: self.updateTagFilter())
+        self.tagCheckbox2.stateChanged.connect(lambda: self.updateTagFilter())
+        self.tagCheckbox3.stateChanged.connect(lambda: self.updateTagFilter())
+        self.tagCheckbox4.stateChanged.connect(lambda: self.updateTagFilter())
+
+        self.resetGyroBtn.clicked.connect(lambda: self.resetGyroButtonPressed(gyro))
+
+        self.show()
+
+    def updateYawValue(self, value):
+        self.yawValue.setText("{:.06f}".format(value))
+
+    def updatePitchValue(self, value):
+        self.pitchValue.setText("{:.06f}".format(value))
+
+    def updateFrames(self, monoFrame, depthFrame):
+        activeTab = self.frameWidget.currentIndex()
+
+        if activeTab == 0:
+            monoFrame = cv2.cvtColor(monoFrame, cv2.COLOR_GRAY2RGB)
+            img = QtGui.QImage(monoFrame, monoFrame.shape[1], monoFrame.shape[0], QtGui.QImage.Format_RGB888)
+            pix = QtGui.QPixmap.fromImage(img)
+            self.monoFrame.setMinimumWidth(monoFrame.shape[1])
+            self.monoFrame.setMinimumHeight(monoFrame.shape[0])
+            self.monoFrame.setMaximumWidth(monoFrame.shape[1])
+            self.monoFrame.setMaximumHeight(monoFrame.shape[0])
+            self.monoFrame.setPixmap(pix)
+        elif activeTab == 1:
+            depthFrame = cv2.cvtColor(depthFrame, cv2.COLOR_BGR2RGB)
+            img = QtGui.QImage(depthFrame, depthFrame.shape[1], depthFrame.shape[0], QtGui.QImage.Format_RGB888)
+            pix = QtGui.QPixmap.fromImage(img)
+            self.depthFrame.setMinimumWidth(depthFrame.shape[1])
+            self.depthFrame.setMinimumHeight(depthFrame.shape[0])
+            self.depthFrame.setMaximumWidth(depthFrame.shape[1])
+            self.depthFrame.setMaximumHeight(depthFrame.shape[0])
+            self.depthFrame.setPixmap(pix)
+        elif activeTab == 2:
+            monoFrame = cv2.cvtColor(monoFrame, cv2.COLOR_GRAY2RGB)
+            img = QtGui.QImage(monoFrame, monoFrame.shape[1], monoFrame.shape[0], QtGui.QImage.Format_RGB888)
+            pix = QtGui.QPixmap.fromImage(img)
+            self.monoFrame2.setMinimumWidth(monoFrame.shape[1])
+            self.monoFrame2.setMinimumHeight(monoFrame.shape[0])
+            self.monoFrame2.setMaximumWidth(monoFrame.shape[1])
+            self.monoFrame2.setMaximumHeight(monoFrame.shape[0])
+            self.monoFrame2.setPixmap(pix)
+
+            depthFrame = cv2.cvtColor(depthFrame, cv2.COLOR_BGR2RGB)
+            img = QtGui.QImage(depthFrame, depthFrame.shape[1], depthFrame.shape[0], QtGui.QImage.Format_RGB888)
+            pix = QtGui.QPixmap.fromImage(img)
+            self.depthFrame2.setMinimumWidth(depthFrame.shape[1])
+            self.depthFrame2.setMinimumHeight(depthFrame.shape[0])
+            self.depthFrame2.setMaximumWidth(depthFrame.shape[1])
+            self.depthFrame2.setMaximumHeight(depthFrame.shape[0])
+            self.depthFrame2.setPixmap(pix)
+
+    def updateTagFilter(self):
+        self.tagFilter = np.array(np.where([True,
+                                            self.tagCheckbox1.isChecked(), self.tagCheckbox2.isChecked(),
+                                            self.tagCheckbox3.isChecked(), self.tagCheckbox4.isChecked()])).tolist()[0]
+
+    def getTagFilter(self):
+        return self.tagFilter
+
+    def resetGyroButtonPressed(self, gyro):
+        gyro.resetAll()
 
 
 if __name__ == '__main__':

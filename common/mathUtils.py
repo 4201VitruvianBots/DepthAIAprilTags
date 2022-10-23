@@ -1,9 +1,10 @@
 
 import math
 
+
 def rotateTranslation(translation, rotation):
     return (translation[0] * math.cos(rotation) - translation[1] * math.sin(rotation),
-            translation[0] * math.sin(rotation) - translation[1] * math.cos(rotation))
+            translation[0] * math.sin(rotation) + translation[1] * math.cos(rotation))
 
 
 def euler_from_quaternion(x, y, z, w):
