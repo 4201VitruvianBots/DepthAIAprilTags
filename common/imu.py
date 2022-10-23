@@ -1,6 +1,5 @@
 import depthai as dai
 import math
-import queue
 import serial
 import socket
 import threading
@@ -15,10 +14,12 @@ class navX:
         self.offsets = dict()
         self.dataKeys = ['pitch', 'roll', 'yaw', 'compass_heading', 'fused_heading', 'altitude']
 
-        # t = threading.Thread(target=self.update)
-        # t.daemon = True
-        # t.start()
-        self.update()
+        t = threading.Thread(target=self.update)
+        t.daemon = True
+        t.start()
+        # self.resetYaw()
+        # self.resetAll()
+        # self.update()
 
     def get(self, keyValue):
         if keyValue not in self.data.keys():
@@ -29,72 +30,88 @@ class navX:
             else:
                 return self.data[keyValue]
 
-    def reset(self):
+    def resetYaw(self):
+        # TODO: Fix this to be not hard-coded. Main issue is generating proper checksum from message
+        resetMsg = bytearray(b''.join(b'\x00' for i in range(13)))
+        resetMsg[0] = ord('!')
+        resetMsg[1] = ord('#')
+        resetMsg[2] = INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2
+        resetMsg[3] = ord('I')
+        resetMsg[4] = NAVX_INTEGRATION_CTL_RESET_YAW
+
+        checksum = sum(resetMsg[:-4])
+        checksumHex = self.byteToHex(checksum)
+        # resetMsg[-4] = checksumHex >> 4
+        # resetMsg[-3] = checksumHex & 0x0F
+        resetMsg[-4:-2] = b'18'
+        resetMsg[-2] = ord('\r')
+        resetMsg[-1] = ord('\n')
         # resetMsg = '!#I{:01b}{:04b}{:02b}\r\n'.format(NAVX_INTEGRATION_CTL_RESET_YAW, 0, 0)
-        resetMsg = b'!#%bI%b' % (INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2), NAVX_INTEGRATION_CTL_RESET_YAW
+        # resetMsg = b'!#%bI%b' % ((INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2).to_bytes(1, byteorder='big'), NAVX_INTEGRATION_CTL_RESET_YAW.to_bytes(2, byteorder='big'))
 
-        resetMsg = self.encoderTermination(resetMsg)
+        # resetMsg = self.encoderTermination(resetMsg)
+        self.s.write(resetMsg)
 
-        self.s.write(resetMsg.encode())
+    def resetAll(self):
+        resetMsg = bytearray(b''.join(b'\x00' for i in range(13)))
+        resetMsg[0] = ord('!')
+        resetMsg[1] = ord('#')
+        resetMsg[2] = INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2
+        resetMsg[3] = ord('I')
+        resetMsg[4] = NAVX_INTEGRATION_CTL_RESET_YAW | NAVX_INTEGRATION_CTL_RESET_VEL_X | \
+                      NAVX_INTEGRATION_CTL_RESET_VEL_Y | NAVX_INTEGRATION_CTL_RESET_VEL_Z | \
+                      NAVX_INTEGRATION_CTL_RESET_DISP_X | NAVX_INTEGRATION_CTL_RESET_DISP_Y | \
+                      NAVX_INTEGRATION_CTL_RESET_DISP_Z
 
-    # def listenThread(self):
-    #     readBuffer = bytearray()
-    #     readIdx = 0
-    #
-    #     while True:
-    #         serialData = self.s.read(256)
-    #
-    #         readBuffer += serialData
-    #
-    #         while True:
-    #             if readBuffer[readIdx] == ord(PACKET_START_CHAR) and readBuffer[readIdx + 1] == ord('#'):
-    #                 READ_MSG = True
-    #                 break
-    #             readIdx += 1
+        checksum = sum(resetMsg[:-4])
+        checksumHex = self.byteToHex(checksum)
+        # resetMsg[-4] = checksumHex >> 4
+        # resetMsg[-3] = checksumHex & 0x0F
+        resetMsg[-4:-2] = b'57'
+        resetMsg[-2] = ord('\r')
+        resetMsg[-1] = ord('\n')
+        # resetMsg = '!#I{:01b}{:04b}{:02b}\r\n'.format(NAVX_INTEGRATION_CTL_RESET_YAW, 0, 0)
+        # resetMsg = b'!#%bI%b' % ((INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2).to_bytes(1, byteorder='big'), NAVX_INTEGRATION_CTL_RESET_YAW.to_bytes(2, byteorder='big'))
 
-    # def readThread(self):
-
+        # resetMsg = self.encoderTermination(resetMsg)
+        self.s.write(resetMsg)
 
     def update(self):
-        DECODE_MSG = False
+        WRITE_TO_BUFFER = False
         READ_MSG = False
 
-        readBuffer = bytearray()
         msgBuffer = bytearray()
-        msgQueue = []
-        readIdx = 0
+        readBuffer = bytearray()
+
         while True:
-            serialData = self.s.read(256)
+            serialData = self.s.read()
 
-            readBuffer += serialData
-
-            # while True:
-            #     if readBuffer[readIdx] == ord(PACKET_START_CHAR) and readBuffer[readIdx + 1] == ord('#'):
-            #         READ_MSG = True
-            #         break
-            #     readIdx += 1
-
-            READ_MSG = True
-            while READ_MSG:
+            if serialData == PACKET_START_CHAR:
                 # print('Got New Packet')
-                if len(readBuffer) < 3:
-                    break
+                WRITE_TO_BUFFER = True
 
-                msgLen = readBuffer[2]
+            if WRITE_TO_BUFFER:
+                readBuffer += serialData
 
-                if msgLen > len(readBuffer):
-                    break
+                if len(readBuffer) > 1:
+                    if readBuffer[0] == ord(PACKET_START_CHAR) and readBuffer[1] != ord(BINARY_PACKET_INDICATOR_CHAR):
+                        readBuffer = bytearray()
+                        WRITE_TO_BUFFER = False
+                    elif readBuffer[-1] == ord('\n') and readBuffer[-2] == ord('\r'):
+                        WRITE_TO_BUFFER = False
+                        msgBuffer = readBuffer
+                        readBuffer = bytearray()
+                        READ_MSG = True
+                    elif len(readBuffer) > 100:
+                        readBuffer = bytearray()
+                        WRITE_TO_BUFFER = False
 
-                msgID = chr(readBuffer[3])
+            if READ_MSG:
+                msgLen = msgBuffer[2]
+                msgID = chr(msgBuffer[3])
+                bufferLen = len(msgBuffer)
 
-                msgBuffer = readBuffer[:msgLen + 2]
-                readBuffer = readBuffer[msgLen + 2:]
-                if msgBuffer[-1] == ord('\n') and msgBuffer[-2] == ord('\r'):
-                    msgQueue.append(msgBuffer)
-
-            while len(msgQueue) > 0:
-                msgBuffer = msgQueue.pop(0)
-                if msgID == 'p' and (msgLen + 2) == AHRSPOS_UPDATE_MESSAGE_LENGTH:
+                if msgID == 'p' and bufferLen == (msgLen + 2) == AHRSPOS_UPDATE_MESSAGE_LENGTH:
                     self.data['yaw'] = self.decodeProtocolSignedHundredthsFloat(
                         msgBuffer[AHRSPOS_UPDATE_YAW_VALUE_INDEX:AHRSPOS_UPDATE_YAW_VALUE_INDEX+2])
                     self.data['pitch'] = self.decodeProtocolSignedHundredthsFloat(
@@ -107,7 +124,7 @@ class navX:
                         msgBuffer[AHRSPOS_UPDATE_ALTITUDE_VALUE_INDEX:AHRSPOS_UPDATE_ALTITUDE_VALUE_INDEX + 4])
                     self.data['fused_heading'] = self.decodeProtocolUnsignedHundredthsFloat(
                         msgBuffer[AHRSPOS_UPDATE_FUSED_HEADING_VALUE_INDEX:AHRSPOS_UPDATE_FUSED_HEADING_VALUE_INDEX + 2])
-                elif msgID == 't' and (msgLen + 2) == AHRSPOS_TS_UPDATE_MESSAGE_LENGTH:
+                elif msgID == 't' and bufferLen == (msgLen + 2) == AHRSPOS_TS_UPDATE_MESSAGE_LENGTH:
                     self.data['yaw'] = self.decodeProtocol1616Float(
                         msgBuffer[AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX:AHRSPOS_TS_UPDATE_YAW_VALUE_INDEX+4])
                     self.data['pitch'] = self.decodeProtocol1616Float(
@@ -122,9 +139,13 @@ class navX:
                         msgBuffer[AHRSPOS_TS_UPDATE_FUSED_HEADING_VALUE_INDEX:AHRSPOS_TS_UPDATE_FUSED_HEADING_VALUE_INDEX + 4])
                     self.data['timestamp'] = self.decodeBinaryUint32(
                         msgBuffer[AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX:AHRSPOS_TS_UPDATE_TIMESTAMP_INDEX + 4])
+                elif msgID == 'j' and bufferLen == (msgLen + 2) == INTEGRATION_CONTROL_RESP_MESSAGE_LENGTH:
+                    print("Received reset message response")
                 else:
-                    print("Error - Could not process message. msgId: '{}' msgLen: {}".format(msgID, msgLen))
+                    # print("Error - Could not process message. msgId: '{}' msgLen: {} bufferLen: {}".format(msgID, msgLen, bufferLen))
                     pass
+
+                READ_MSG = False
 
     def decodeBinaryUint16(self, buffer):
         return buffer[1] << 8 | buffer[0]
@@ -187,7 +208,7 @@ class navX:
                 checksum += ord(i)
 
         hex = self.byteToHex(checksum)
-        buffer = b'{}%b%b\r\n' % buffer, hex >> 4, hex & 0x0F
+        buffer += b'%b%b\r\n' % ((hex >> 4).to_bytes(1, byteorder='big'), (hex & 0x0F).to_bytes(1, byteorder='big'))
         return buffer
 
 

@@ -4,6 +4,10 @@ import depthai as dai
 import logging
 import math
 import numpy as np
+from PyQt5 import QtWidgets, uic
+import sys
+
+from qtpy import QtGui
 
 from common import constants
 from common import utils
@@ -128,7 +132,7 @@ def main():
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=1, blocking=False)
 
         if USE_EXTERNAL_IMU:
-            gyro = navX()
+            gyro = navX('COM13')
 
         # Precalculate this value to save some performance
         camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
@@ -141,6 +145,11 @@ def main():
             'yaw': None
         }
 
+        if not DISABLE_VIDEO_OUTPUT:
+            app = QtWidgets.QApplication(sys.argv)
+            testGui = DebugWindow(gyro)
+            # app.exec_()
+
         while True:
             try:
                 inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
@@ -151,16 +160,20 @@ def main():
 
             if USE_EXTERNAL_IMU:
                 try:
-                    gyro.update()
                     robotAngles = {
                         'pitch': math.radians(gyro.get('pitch')),
                         'yaw': math.radians(-gyro.get('yaw'))
                     }
+                    if not DISABLE_VIDEO_OUTPUT:
+                        testGui.updateYawValue(math.degrees(robotAngles['yaw']))
+                        testGui.updatePitchValue(math.degrees(robotAngles['pitch']))
                 except Exception as e:
-                    log.error("Could not grab gyro values")
+                    # log.error("Could not grab gyro values")
                     pass
             else:
-                robotAngle = math.radians(nt_drivetrain_tab.getNumber("Heading_Degrees", 90.0))
+                robotAngles = {
+                    'yaw': math.radians(nt_drivetrain_tab.getNumber("Heading_Degrees", 90.0))
+                }
 
             depthFrame = inDepth.getFrame()
             frameRight = inRight.getCvFrame()  # get mono right frame
@@ -295,16 +308,13 @@ def main():
                 cv2.putText(frameRight, "FPS: {:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
                 cv2.putText(frameRight, "Latency: {:.2f}ms".format(avgLatency), (0, 50), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
-                if USE_EXTERNAL_IMU:
-                    cv2.putText(frameRight, "{:.2f}".format(robotAngle), (0, 48), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
-
-                cv2.imshow(pipeline_info["monoRightQueue"], frameRight)
-
                 depthFrameColor = cv2.normalize(depthFrame, None, 255, 0, cv2.NORM_INF, cv2.CV_8UC1)
                 depthFrameColor = cv2.equalizeHist(depthFrameColor)
                 depthFrameColor = cv2.applyColorMap(depthFrameColor, cv2.COLORMAP_HOT)
 
-                cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
+                # cv2.imshow(pipeline_info["monoRightQueue"], frameRight)
+                # cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
+                testGui.updateFrames(frameRight, depthFrameColor)
             else:
                 latencyStd = np.std(latency) if len(latency) < 100 else np.std(latency[-100:])
                 print('Latency: {:.2f} ms, Std: {:.2f}'.format(avgLatency, np.std(latencyStd)))
@@ -316,6 +326,63 @@ def main():
             elif key == ord(' '):
                 if 'gyro' in locals():
                     gyro.reset()
+
+
+class DebugWindow(QtWidgets.QWidget):
+    def __init__(self, gyro):
+        super(DebugWindow, self).__init__()
+        uic.loadUi('../designer/debugWindow.ui', self)
+        self.resetGyroBtn.clicked.connect(lambda: self.resetGyroButtonPressed(gyro))
+        self.show()
+
+    def updateYawValue(self, value):
+        self.yawValue.setText("{:.06f}".format(value))
+
+    def updatePitchValue(self, value):
+        self.pitchValue.setText("{:.06f}".format(value))
+
+    def updateFrames(self, monoFrame, depthFrame):
+        activeTab = self.frameWidget.currentIndex()
+
+        if activeTab == 0:
+            monoFrame = cv2.cvtColor(monoFrame, cv2.COLOR_GRAY2RGB)
+            img = QtGui.QImage(monoFrame, monoFrame.shape[1], monoFrame.shape[0], QtGui.QImage.Format_RGB888)
+            pix = QtGui.QPixmap.fromImage(img)
+            self.monoFrame.setMinimumWidth(monoFrame.shape[1])
+            self.monoFrame.setMinimumHeight(monoFrame.shape[0])
+            self.monoFrame.setMaximumWidth(monoFrame.shape[1])
+            self.monoFrame.setMaximumHeight(monoFrame.shape[0])
+            self.monoFrame.setPixmap(pix)
+        elif activeTab == 1:
+            depthFrame = cv2.cvtColor(depthFrame, cv2.COLOR_BGR2RGB)
+            img = QtGui.QImage(depthFrame, depthFrame.shape[1], depthFrame.shape[0], QtGui.QImage.Format_RGB888)
+            pix = QtGui.QPixmap.fromImage(img)
+            self.depthFrame.setMinimumWidth(depthFrame.shape[1])
+            self.depthFrame.setMinimumHeight(depthFrame.shape[0])
+            self.depthFrame.setMaximumWidth(depthFrame.shape[1])
+            self.depthFrame.setMaximumHeight(depthFrame.shape[0])
+            self.depthFrame.setPixmap(pix)
+        elif activeTab == 2:
+            monoFrame = cv2.cvtColor(monoFrame, cv2.COLOR_GRAY2RGB)
+            img = QtGui.QImage(monoFrame, monoFrame.shape[1], monoFrame.shape[0], QtGui.QImage.Format_RGB888)
+            pix = QtGui.QPixmap.fromImage(img)
+            self.monoFrame2.setMinimumWidth(monoFrame.shape[1])
+            self.monoFrame2.setMinimumHeight(monoFrame.shape[0])
+            self.monoFrame2.setMaximumWidth(monoFrame.shape[1])
+            self.monoFrame2.setMaximumHeight(monoFrame.shape[0])
+            self.monoFrame2.setPixmap(pix)
+
+            depthFrame = cv2.cvtColor(depthFrame, cv2.COLOR_BGR2RGB)
+            img = QtGui.QImage(depthFrame, depthFrame.shape[1], depthFrame.shape[0], QtGui.QImage.Format_RGB888)
+            pix = QtGui.QPixmap.fromImage(img)
+            self.depthFrame2.setMinimumWidth(depthFrame.shape[1])
+            self.depthFrame2.setMinimumHeight(depthFrame.shape[0])
+            self.depthFrame2.setMaximumWidth(depthFrame.shape[1])
+            self.depthFrame2.setMaximumHeight(depthFrame.shape[0])
+            self.depthFrame2.setPixmap(pix)
+
+    def resetGyroButtonPressed(self, gyro):
+        gyro.reset()
 
 
 if __name__ == '__main__':
