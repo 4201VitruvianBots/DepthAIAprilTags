@@ -12,7 +12,6 @@ class navX:
         self.s = serial.Serial(port)
         self.data = dict()
         self.offsets = dict()
-        self.dataKeys = ['pitch', 'roll', 'yaw', 'compass_heading', 'fused_heading', 'altitude']
 
         t = threading.Thread(target=self.update)
         t.daemon = True
@@ -25,10 +24,7 @@ class navX:
         if keyValue not in self.data.keys():
             return None
         else:
-            if keyValue in self.offsets.keys():
-                return self.data[keyValue] - self.offsets[keyValue]
-            else:
-                return self.data[keyValue]
+            return self.data[keyValue]
 
     def resetYaw(self):
         # TODO: Fix this to be not hard-coded. Main issue is generating proper checksum from message

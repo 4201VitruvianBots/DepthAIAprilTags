@@ -9,9 +9,10 @@ import sys
 
 from qtpy import QtGui
 
-from common import constants
+from common import constants, mathUtils
 from common import utils
 import spatialCalculator_pipelines
+from common.constants import TAG_DICTIONARY
 
 from common.imu import navX
 from networktables.util import NetworkTables
@@ -188,10 +189,19 @@ def main():
                 x_pos = []
                 y_pos = []
                 z_pos = []
+                pnp_tag_id = []
+                pnp_x_pos = []
+                pnp_y_pos = []
+                pnp_z_pos = []
                 pose_id = []
 
                 for tag in tags:
-                    if tag.decision_margin < 50:
+                    # if tag.tag_id != 3 and tag.tag_id != 1:
+                    #     continue
+                    if not DISABLE_VIDEO_OUTPUT:
+                        if tag.tag_id not in testGui.getTagFilter():
+                            continue
+                    if tag.decision_margin < 30:
                         log.warning("Tag {} found, but not valid".format(tag.tag_id))
                         continue
 
@@ -234,6 +244,25 @@ def main():
                             'y': tag.pose_t[1][0] - spatialData['y'],
                             'z': tag.pose_t[2][0] - spatialData['z']
                         }
+
+                        tagPose = TAG_DICTIONARY[tag.tag_id]["pose"]
+
+                        camera_pitch = camera_params['mount_angle_radians'] if robotAngles['pitch'] is None else robotAngles['pitch']
+                        xy_target_distance = math.cos(camera_pitch + math.radians(tagTranslation['y_angle'])) * tag.pose_t[2][0]
+                        x_translation = math.cos(math.radians(tagTranslation['x_angle'])) * xy_target_distance
+                        y_translation = -math.sin(math.radians(tagTranslation['x_angle'])) * xy_target_distance
+                        camera_yaw = 0 if robotAngles['yaw'] is None else robotAngles['yaw']
+                        rotatedTranslation = mathUtils.rotateTranslation((x_translation, y_translation),
+                                                                         (camera_yaw + math.radians(tagTranslation['x_angle'])))
+
+                        pnpRobotPose = {
+                            'x': tagPose["x"] - rotatedTranslation[0],
+                            'y': tagPose["y"] - rotatedTranslation[1],
+                        }
+                        pnp_tag_id.append(tag.tag_id)
+                        pnp_x_pos.append(pnpRobotPose['x'])
+                        pnp_y_pos.append(pnpRobotPose['y'])
+
                         log.info("Tag ID: {}\tDelta X: {:.2f}\t"
                                  "Delta Y: {:.2f}\tDelta Z: {:.2f}".format(tag.tag_id,
                                                                            tagInfo['deltaTranslation']['x'],
@@ -254,6 +283,10 @@ def main():
                     nt_depthai_tab.putNumberArray("X Poses", x_pos)
                     nt_depthai_tab.putNumberArray("Y Poses", y_pos)
                     nt_depthai_tab.putNumberArray("Z Poses", z_pos)
+
+                    nt_depthai_tab.putNumberArray("PnP Pose ID", pnp_tag_id)
+                    nt_depthai_tab.putNumberArray("PnP X Poses", pnp_x_pos)
+                    nt_depthai_tab.putNumberArray("PnP Y Poses", pnp_y_pos)
 
                     for detectedTag in detectedTags:
                         points = detectedTag["corners"].astype(np.int32)
@@ -332,7 +365,14 @@ class DebugWindow(QtWidgets.QWidget):
     def __init__(self, gyro):
         super(DebugWindow, self).__init__()
         uic.loadUi('../designer/debugWindow.ui', self)
+        self.tagFilter = list(range(1, 5))
+        self.tagCheckbox1.stateChanged.connect(lambda: self.updateTagFilter())
+        self.tagCheckbox2.stateChanged.connect(lambda: self.updateTagFilter())
+        self.tagCheckbox3.stateChanged.connect(lambda: self.updateTagFilter())
+        self.tagCheckbox4.stateChanged.connect(lambda: self.updateTagFilter())
+
         self.resetGyroBtn.clicked.connect(lambda: self.resetGyroButtonPressed(gyro))
+
         self.show()
 
     def updateYawValue(self, value):
@@ -381,8 +421,16 @@ class DebugWindow(QtWidgets.QWidget):
             self.depthFrame2.setMaximumHeight(depthFrame.shape[0])
             self.depthFrame2.setPixmap(pix)
 
+    def updateTagFilter(self):
+        self.tagFilter = np.array(np.where([True,
+                                            self.tagCheckbox1.isChecked(), self.tagCheckbox2.isChecked(),
+                                            self.tagCheckbox3.isChecked(), self.tagCheckbox4.isChecked()])).tolist()[0]
+
+    def getTagFilter(self):
+        return self.tagFilter
+
     def resetGyroButtonPressed(self, gyro):
-        gyro.reset()
+        gyro.resetAll()
 
 
 if __name__ == '__main__':
