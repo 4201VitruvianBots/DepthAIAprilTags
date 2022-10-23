@@ -163,10 +163,10 @@ def main():
                 try:
                     robotAngles = {
                         'pitch': math.radians(gyro.get('pitch')),
-                        'yaw': math.radians(-gyro.get('yaw'))
+                        'yaw': math.radians(gyro.get('yaw'))
                     }
                     if not DISABLE_VIDEO_OUTPUT:
-                        testGui.updateYawValue(math.degrees(robotAngles['yaw']))
+                        testGui.updateYawValue(math.degrees(-robotAngles['yaw']))
                         testGui.updatePitchValue(math.degrees(robotAngles['pitch']))
                 except Exception as e:
                     # log.error("Could not grab gyro values")
@@ -257,7 +257,7 @@ def main():
 
                         pnpRobotPose = {
                             'x': tagPose["x"] - rotatedTranslation[0],
-                            'y': tagPose["y"] - rotatedTranslation[1],
+                            'y': tagPose["y"] + rotatedTranslation[1],
                         }
                         pnp_tag_id.append(tag.tag_id)
                         pnp_x_pos.append(pnpRobotPose['x'])
@@ -278,6 +278,10 @@ def main():
                         log.info("Std dev X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(np.std(x_pos),
                                                                                   np.std(y_pos),
                                                                                   np.std(z_pos)))
+
+                        nt_depthai_tab.putNumber("Avg X Pose", avg_x)
+                        nt_depthai_tab.putNumber("Avg Y Pose", avg_y)
+                        nt_depthai_tab.putNumber("Heading Pose", 0 if robotAngles['yaw'] is None else robotAngles['yaw'])
 
                     nt_depthai_tab.putNumberArray("Pose ID", pose_id)
                     nt_depthai_tab.putNumberArray("X Poses", x_pos)

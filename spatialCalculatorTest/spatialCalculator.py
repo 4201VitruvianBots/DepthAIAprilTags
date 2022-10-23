@@ -94,7 +94,7 @@ class HostSpatialsCalc:
 
         robotPose = {
             'x': tagPose['x'] - rotatedTranslation[0],
-            'y': tagPose['y'] - rotatedTranslation[1],
+            'y': tagPose['y'] + rotatedTranslation[1],
             'z': tagPose['z'] + tag_translation['z']
         }
 
