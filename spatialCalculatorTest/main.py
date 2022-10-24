@@ -4,10 +4,8 @@ import depthai as dai
 import logging
 import math
 import numpy as np
-from PyQt5 import QtWidgets, uic
+from PyQt5 import QtGui, QtWidgets, uic
 import sys
-
-from qtpy import QtGui
 
 from common import constants, mathUtils
 from common import utils
@@ -132,8 +130,12 @@ def main():
         depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=1, blocking=False)
         qRight = device.getOutputQueue(name=pipeline_info["monoRightQueue"], maxSize=1, blocking=False)
 
+        gyro = None
         if USE_EXTERNAL_IMU:
-            gyro = navX('COM13')
+            try:
+                gyro = navX('COM4')
+            except Exception as e:
+                log.error("Could not initialize gyro")
 
         # Precalculate this value to save some performance
         camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
@@ -196,8 +198,6 @@ def main():
                 pose_id = []
 
                 for tag in tags:
-                    # if tag.tag_id != 3 and tag.tag_id != 1:
-                    #     continue
                     if not DISABLE_VIDEO_OUTPUT:
                         if tag.tag_id not in testGui.getTagFilter():
                             continue
@@ -369,13 +369,23 @@ class DebugWindow(QtWidgets.QWidget):
     def __init__(self, gyro):
         super(DebugWindow, self).__init__()
         uic.loadUi('../designer/debugWindow.ui', self)
-        self.tagFilter = list(range(1, 5))
+        self.tagFilter = list(range(0, 8))
+        self.tagCheckbox0.stateChanged.connect(lambda: self.updateTagFilter())
         self.tagCheckbox1.stateChanged.connect(lambda: self.updateTagFilter())
         self.tagCheckbox2.stateChanged.connect(lambda: self.updateTagFilter())
         self.tagCheckbox3.stateChanged.connect(lambda: self.updateTagFilter())
         self.tagCheckbox4.stateChanged.connect(lambda: self.updateTagFilter())
+        self.tagCheckbox5.stateChanged.connect(lambda: self.updateTagFilter())
+        self.tagCheckbox6.stateChanged.connect(lambda: self.updateTagFilter())
+        self.tagCheckbox7.stateChanged.connect(lambda: self.updateTagFilter())
 
-        self.resetGyroBtn.clicked.connect(lambda: self.resetGyroButtonPressed(gyro))
+        self.gyro = gyro
+        if self.gyro is not None:
+            self.resetGyroBtn.clicked.connect(lambda: self.resetGyroButtonPressed(self.gyro))
+        else:
+            self.resetGyroBtn.setEnabled(False)
+            self.yawValue.setEnabled(False)
+            self.pitchValue.setEnabled(False)
 
         self.show()
 
@@ -426,15 +436,17 @@ class DebugWindow(QtWidgets.QWidget):
             self.depthFrame2.setPixmap(pix)
 
     def updateTagFilter(self):
-        self.tagFilter = np.array(np.where([True,
-                                            self.tagCheckbox1.isChecked(), self.tagCheckbox2.isChecked(),
-                                            self.tagCheckbox3.isChecked(), self.tagCheckbox4.isChecked()])).tolist()[0]
+        self.tagFilter = np.array(np.where([self.tagCheckbox0.isChecked(), self.tagCheckbox1.isChecked(),
+                                            self.tagCheckbox2.isChecked(), self.tagCheckbox3.isChecked(),
+                                            self.tagCheckbox4.isChecked(), self.tagCheckbox5.isChecked(),
+                                            self.tagCheckbox6.isChecked(), self.tagCheckbox7.isChecked()])).tolist()[0]
 
     def getTagFilter(self):
         return self.tagFilter
 
     def resetGyroButtonPressed(self, gyro):
-        gyro.resetAll()
+        if gyro is not None:
+            gyro.resetAll()
 
 
 if __name__ == '__main__':

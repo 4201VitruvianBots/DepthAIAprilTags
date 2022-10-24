@@ -2,11 +2,11 @@ import keyboard
 
 from common import imu
 
-navX = imu.navX('COM13')
+navX = imu.navX('COM4')
 keyboard.on_press_key(" ", lambda _: navX.resetYaw())
 keyboard.on_press_key("a", lambda _: navX.resetAll())
 
-# navX.reset()
+navX.resetAll()
 while True:
     yaw = navX.get("yaw")
     timestamp = navX.get("timestamp")

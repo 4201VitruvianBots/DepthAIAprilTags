@@ -28,28 +28,23 @@ class navX:
 
     def resetYaw(self):
         # TODO: Fix this to be not hard-coded. Main issue is generating proper checksum from message
-        resetMsg = bytearray(b''.join(b'\x00' for i in range(13)))
+        resetMsg = bytearray(b''.join(b'\x00' for i in range(9)))
         resetMsg[0] = ord('!')
         resetMsg[1] = ord('#')
         resetMsg[2] = INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2
         resetMsg[3] = ord('I')
         resetMsg[4] = NAVX_INTEGRATION_CTL_RESET_YAW
 
-        checksum = sum(resetMsg[:-4])
-        checksumHex = self.byteToHex(checksum)
         # resetMsg[-4] = checksumHex >> 4
         # resetMsg[-3] = checksumHex & 0x0F
-        resetMsg[-4:-2] = b'18'
-        resetMsg[-2] = ord('\r')
-        resetMsg[-1] = ord('\n')
         # resetMsg = '!#I{:01b}{:04b}{:02b}\r\n'.format(NAVX_INTEGRATION_CTL_RESET_YAW, 0, 0)
         # resetMsg = b'!#%bI%b' % ((INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2).to_bytes(1, byteorder='big'), NAVX_INTEGRATION_CTL_RESET_YAW.to_bytes(2, byteorder='big'))
 
-        # resetMsg = self.encoderTermination(resetMsg)
+        resetMsg = self.encoderTermination(resetMsg)
         self.s.write(resetMsg)
 
     def resetAll(self):
-        resetMsg = bytearray(b''.join(b'\x00' for i in range(13)))
+        resetMsg = bytearray(b''.join(b'\x00' for i in range(9)))
         resetMsg[0] = ord('!')
         resetMsg[1] = ord('#')
         resetMsg[2] = INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2
@@ -59,17 +54,10 @@ class navX:
                       NAVX_INTEGRATION_CTL_RESET_DISP_X | NAVX_INTEGRATION_CTL_RESET_DISP_Y | \
                       NAVX_INTEGRATION_CTL_RESET_DISP_Z
 
-        checksum = sum(resetMsg[:-4])
-        checksumHex = self.byteToHex(checksum)
-        # resetMsg[-4] = checksumHex >> 4
-        # resetMsg[-3] = checksumHex & 0x0F
-        resetMsg[-4:-2] = b'57'
-        resetMsg[-2] = ord('\r')
-        resetMsg[-1] = ord('\n')
         # resetMsg = '!#I{:01b}{:04b}{:02b}\r\n'.format(NAVX_INTEGRATION_CTL_RESET_YAW, 0, 0)
         # resetMsg = b'!#%bI%b' % ((INTEGRATION_CONTROL_CMD_MESSAGE_LENGTH - 2).to_bytes(1, byteorder='big'), NAVX_INTEGRATION_CTL_RESET_YAW.to_bytes(2, byteorder='big'))
 
-        # resetMsg = self.encoderTermination(resetMsg)
+        resetMsg = self.encoderTermination(resetMsg)
         self.s.write(resetMsg)
 
     def update(self):
@@ -204,7 +192,7 @@ class navX:
                 checksum += ord(i)
 
         hex = self.byteToHex(checksum)
-        buffer += b'%b%b\r\n' % ((hex >> 4).to_bytes(1, byteorder='big'), (hex & 0x0F).to_bytes(1, byteorder='big'))
+        buffer += '{:02X}\r\n'.format(hex).encode()
         return buffer
 
 
