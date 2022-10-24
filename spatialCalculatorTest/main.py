@@ -175,7 +175,8 @@ def main():
                     pass
             else:
                 robotAngles = {
-                    'yaw': math.radians(nt_drivetrain_tab.getNumber("Heading_Degrees", 90.0))
+                    'pitch': math.radians(constants.CAMERA_MOUNT_ANGLE),
+                    'yaw': math.radians(nt_drivetrain_tab.getNumber("Heading_Degrees", 0.0))
                 }
 
             depthFrame = inDepth.getFrame()
@@ -400,7 +401,7 @@ class DebugWindow(QtWidgets.QWidget):
     def updateFrames(self, monoFrame, depthFrame):
         activeTab = self.frameWidget.currentIndex()
 
-        if activeTab == 0 or activeTab == 2:
+        if activeTab == 0:
             monoFrame = cv2.cvtColor(monoFrame, cv2.COLOR_GRAY2RGB)
             img = QtGui.QImage(monoFrame, monoFrame.shape[1], monoFrame.shape[0], QtGui.QImage.Format_RGB888)
             pix = QtGui.QPixmap.fromImage(img)
@@ -409,7 +410,7 @@ class DebugWindow(QtWidgets.QWidget):
             self.monoFrame.setMaximumWidth(monoFrame.shape[1])
             self.monoFrame.setMaximumHeight(monoFrame.shape[0])
             self.monoFrame.setPixmap(pix)
-        elif activeTab == 1 or activeTab == 2:
+        elif activeTab == 1:
             depthFrame = cv2.cvtColor(depthFrame, cv2.COLOR_BGR2RGB)
             img = QtGui.QImage(depthFrame, depthFrame.shape[1], depthFrame.shape[0], QtGui.QImage.Format_RGB888)
             pix = QtGui.QPixmap.fromImage(img)
@@ -418,6 +419,24 @@ class DebugWindow(QtWidgets.QWidget):
             self.depthFrame.setMaximumWidth(depthFrame.shape[1])
             self.depthFrame.setMaximumHeight(depthFrame.shape[0])
             self.depthFrame.setPixmap(pix)
+        elif activeTab == 2:
+            monoFrame = cv2.cvtColor(monoFrame, cv2.COLOR_GRAY2RGB)
+            img = QtGui.QImage(monoFrame, monoFrame.shape[1], monoFrame.shape[0], QtGui.QImage.Format_RGB888)
+            pix = QtGui.QPixmap.fromImage(img)
+            self.monoFrame2.setMinimumWidth(monoFrame.shape[1])
+            self.monoFrame2.setMinimumHeight(monoFrame.shape[0])
+            self.monoFrame2.setMaximumWidth(monoFrame.shape[1])
+            self.monoFrame2.setMaximumHeight(monoFrame.shape[0])
+            self.monoFrame2.setPixmap(pix)
+
+            depthFrame = cv2.cvtColor(depthFrame, cv2.COLOR_BGR2RGB)
+            img = QtGui.QImage(depthFrame, depthFrame.shape[1], depthFrame.shape[0], QtGui.QImage.Format_RGB888)
+            pix = QtGui.QPixmap.fromImage(img)
+            self.depthFrame2.setMinimumWidth(depthFrame.shape[1])
+            self.depthFrame2.setMinimumHeight(depthFrame.shape[0])
+            self.depthFrame2.setMaximumWidth(depthFrame.shape[1])
+            self.depthFrame2.setMaximumHeight(depthFrame.shape[0])
+            self.depthFrame2.setPixmap(pix)
 
     def updateTagFilter(self):
         self.tagFilter = np.array(np.where([self.tagCheckbox0.isChecked(), self.tagCheckbox1.isChecked(),
