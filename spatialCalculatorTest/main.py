@@ -300,8 +300,7 @@ def main():
                         textX = min(points[:, 0])
                         textY = min(points[:, 1]) + 20
                         cv2.putText(frameRight, "tag_id: {}".format(detectedTag['id']),
-                                    (textX, textY), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
-                                    (255, 255, 255))
+                                    (textX, textY), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
 
                         if ENABLE_SOLVEPNP:
                             ipoints, _ = cv2.projectPoints(constants.OPOINTS,
@@ -320,20 +319,15 @@ def main():
                         # If we have spatial data, print it
                         if "spatialData" in detectedTag.keys() and not DISABLE_VIDEO_OUTPUT:
                             cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["spatialData"]['x']),
-                                        (textX, textY + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
-                                        (255, 255, 255))
+                                        (textX, textY + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
                             cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["spatialData"]['y']),
-                                        (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
-                                        (255, 255, 255))
+                                        (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
                             cv2.putText(frameRight, "x angle: {:.2f}".format(detectedTag["translation"]['x_angle']),
-                                        (textX, textY + 60), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
-                                        (255, 255, 255))
+                                        (textX, textY + 60), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
                             cv2.putText(frameRight, "y angle: {:.2f}".format(detectedTag["translation"]['y_angle']),
-                                        (textX, textY + 80), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
-                                        (255, 255, 255))
+                                        (textX, textY + 80), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
                             cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["spatialData"]['z']),
-                                        (textX, textY + 100), cv2.FONT_HERSHEY_TRIPLEX, 0.6,
-                                        (255, 255, 255))
+                                        (textX, textY + 100), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
                             cv2.rectangle(frameRight, detectedTag["topLeftXY"], detectedTag["bottomRightXY"],
                                           (0, 0, 0), 3)
 
