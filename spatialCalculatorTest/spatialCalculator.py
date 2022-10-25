@@ -81,21 +81,24 @@ class HostSpatialsCalc:
         camera_angle = self.mountAngle if robotAngles['pitch'] is None else robotAngles['pitch']
         xy_target_distance = math.cos(camera_angle + angle_y) * spatials['z']
 
+        camera_yaw = 0 if robotAngles['yaw'] is None else robotAngles['yaw']
         tag_translation = {
-            'x': math.cos(angle_x) * xy_target_distance,
-            'y': -math.sin(angle_x) * xy_target_distance,
+            # In WPILib coordinates
+            'x': math.cos(angle_x + camera_yaw) * xy_target_distance,
+            'y': -math.sin(angle_x + camera_yaw) * xy_target_distance,
             'z': math.sin(camera_angle + angle_y) * spatials['z'],
+            # In Camera orientation
             'x_angle': math.degrees(angle_x),
             'y_angle': math.degrees(angle_y)
         }
 
-        camera_yaw = 0 if robotAngles['yaw'] is None else robotAngles['yaw']
-        rotatedTranslation = mathUtils.rotateTranslation((tag_translation['x'], tag_translation['y']), camera_yaw + angle_x)
+        rotatedTranslation = mathUtils.rotateTranslation((tag_translation['x'], tag_translation['y']), math.radians(180))
+        # rotatedTranslation = mathUtils.rotateTranslation((-spatials['z'], spatials['x']), camera_yaw + angle_x)
 
         robotPose = {
-            'x': tagPose['x'] - rotatedTranslation[0],
-            'y': tagPose['y'] + rotatedTranslation[1],
-            'z': tagPose['z'] + tag_translation['z']
+            'x': rotatedTranslation[0] + tagPose['x'],
+            'y': rotatedTranslation[1] + tagPose['y'],
+            'z': tagPose['z'] - tag_translation['z']
         }
 
         return robotPose, tag_translation, spatials

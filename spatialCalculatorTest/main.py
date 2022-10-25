@@ -133,7 +133,7 @@ def main():
         gyro = None
         if USE_EXTERNAL_IMU:
             try:
-                gyro = navX('COM4')
+                gyro = navX('COM13')
             except Exception as e:
                 log.error("Could not initialize gyro")
 
@@ -250,15 +250,16 @@ def main():
 
                         camera_pitch = camera_params['mount_angle_radians'] if robotAngles['pitch'] is None else robotAngles['pitch']
                         xy_target_distance = math.cos(camera_pitch + math.radians(tagTranslation['y_angle'])) * tag.pose_t[2][0]
-                        x_translation = math.cos(math.radians(tagTranslation['x_angle'])) * xy_target_distance
-                        y_translation = -math.sin(math.radians(tagTranslation['x_angle'])) * xy_target_distance
+
                         camera_yaw = 0 if robotAngles['yaw'] is None else robotAngles['yaw']
-                        rotatedTranslation = mathUtils.rotateTranslation((x_translation, y_translation),
-                                                                         (camera_yaw + math.radians(tagTranslation['x_angle'])))
+                        x_translation = math.cos(math.radians(tagTranslation['x_angle']) + camera_yaw) * xy_target_distance
+                        y_translation = -math.sin(math.radians(tagTranslation['x_angle']) + camera_yaw) * xy_target_distance
+                        camera_yaw = 0 if robotAngles['yaw'] is None else robotAngles['yaw']
+                        rotatedTranslation = mathUtils.rotateTranslation((x_translation, y_translation), math.radians(180))
 
                         pnpRobotPose = {
-                            'x': tagPose["x"] - rotatedTranslation[0],
-                            'y': tagPose["y"] + rotatedTranslation[1],
+                            'x': rotatedTranslation[0] + tagPose['x'],
+                            'y': rotatedTranslation[1] + tagPose['y']
                         }
                         pnp_tag_id.append(tag.tag_id)
                         pnp_x_pos.append(pnpRobotPose['x'])
