@@ -254,12 +254,10 @@ def main():
                         camera_yaw = 0 if robotAngles['yaw'] is None else robotAngles['yaw']
                         x_translation = math.cos(math.radians(tagTranslation['x_angle']) + camera_yaw) * xy_target_distance
                         y_translation = -math.sin(math.radians(tagTranslation['x_angle']) + camera_yaw) * xy_target_distance
-                        camera_yaw = 0 if robotAngles['yaw'] is None else robotAngles['yaw']
-                        rotatedTranslation = mathUtils.rotateTranslation((x_translation, y_translation), math.radians(180))
 
                         pnpRobotPose = {
-                            'x': rotatedTranslation[0] + tagPose['x'],
-                            'y': rotatedTranslation[1] + tagPose['y']
+                            'x': tagPose['x'] - x_translation,
+                            'y': tagPose['y'] - y_translation
                         }
                         pnp_tag_id.append(tag.tag_id)
                         pnp_x_pos.append(pnpRobotPose['x'])

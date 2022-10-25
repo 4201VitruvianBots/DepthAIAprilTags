@@ -92,12 +92,9 @@ class HostSpatialsCalc:
             'y_angle': math.degrees(angle_y)
         }
 
-        rotatedTranslation = mathUtils.rotateTranslation((tag_translation['x'], tag_translation['y']), math.radians(180))
-        # rotatedTranslation = mathUtils.rotateTranslation((-spatials['z'], spatials['x']), camera_yaw + angle_x)
-
         robotPose = {
-            'x': rotatedTranslation[0] + tagPose['x'],
-            'y': rotatedTranslation[1] + tagPose['y'],
+            'x': tagPose['x'] - tag_translation['x'],
+            'y': tagPose['y'] - tag_translation['y'],
             'z': tagPose['z'] - tag_translation['z']
         }
 
