@@ -8,12 +8,14 @@ from common.constants import TAG_DICTIONARY
 
 class HostSpatialsCalc:
     # We need device object to get calibration data
-    def __init__(self, camera_params):
+    def __init__(self, camera_params, tag_dictionary, log):
         # calibData = device.readCalibration()
         # Required information for calculating spatial coordinates on the host
         self.monoHFOV = np.deg2rad(camera_params['hfov'])
         self.monoVFOV = np.deg2rad(camera_params['vfov'])
         self.mountAngle = camera_params['mount_angle_radians']
+        self.tagDictionary = tag_dictionary
+        self.log = log
 
         # Values
         self.DELTA = 5
@@ -46,10 +48,11 @@ class HostSpatialsCalc:
 
     # roi has to be list of ints
     def calc_spatials(self, depthFrame, tag, roi, robotAngles, averaging_method=np.mean):
-        if tag.tag_id not in TAG_DICTIONARY.keys():
+        if tag.tag_id not in self.tagDictionary.keys():
+            self.log.error('Tag {} detected, but not in dictionary. Skipping pose estimation'.format(tag.tag_id))
             return None, None, None
 
-        tagPose = TAG_DICTIONARY[tag.tag_id]["pose"]
+        tagPose = self.tagDictionary[tag.tag_id]["pose"]
 
         # roi = self._check_input(roi, depthFrame)  # If point was passed, convert it to ROI
         xmin, ymin, xmax, ymax = roi
@@ -101,11 +104,11 @@ class HostSpatialsCalc:
         return robotPose, tag_translation, spatials
 
 
-def estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, frame_shape):
-    if tag.tag_id not in TAG_DICTIONARY.keys():
+def estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, tagDictionary, frame_shape):
+    if tag.tag_id not in tagDictionary.keys():
         return None, None
 
-    tagPose = TAG_DICTIONARY[tag.tag_id]["pose"]
+    tagPose = tagDictionary[tag.tag_id]["pose"]
 
     horizontal_angle_radians = math.atan((tag.center[0] - (frame_shape[1] / 2.0)) / camera_params["hfl"])
     vertical_angle_radians = -math.atan((tag.center[1] - (frame_shape[0] / 2.0)) / camera_params["vfl"])

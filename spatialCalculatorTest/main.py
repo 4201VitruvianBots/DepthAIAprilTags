@@ -42,6 +42,8 @@ parser.add_argument('-pnp', dest='apriltag_pose', action="store_true", default=F
 parser.add_argument('-imu', dest='imu', action="store_true", default=False, help='Use external IMU')
 parser.add_argument('-r', dest='record_video', action="store_true", default=False, help='Record video data')
 
+parser.add_argument('-dic', dest='tag_dictionary', action="store", type=str, default='test', help='Set Tag Dictionary')
+
 args = parser.parse_args()
 
 log = logging.getLogger(__name__)
@@ -49,17 +51,24 @@ c_handler = logging.StreamHandler()
 log.addHandler(c_handler)
 log.setLevel(logging.INFO)
 
+import socket
 
 def init_networktables():
     NetworkTables.startClientTeam(4201)
-
+    hostname = socket.gethostname()
+    ip = socket.gethostbyname(hostname)
     if not NetworkTables.isConnected():
         log.debug("Could not connect to team client. Trying other addresses...")
         NetworkTables.startClient([
+            ip
             # '10.42.1.2',
-            # '127.0.0.1',
+            # ('127.0.0.1', 57599),
+            # ('localhost', 57823)
             # '10.0.0.2',
-            '192.168.100.25'
+            # '192.168.100.25'
+            # '192.168.100.25'
+            # '172.22.64.1'
+            # '169.254.254.200'
         ])
 
     if NetworkTables.isConnected():
@@ -93,6 +102,8 @@ def main():
 
     fps = utils.FPSHandler()
     latency = np.array([])
+
+    tag_dictionary = constants.TAG_DICTIONARIES[args.tag_dictionary]
 
     with dai.Device(pipeline) as device:
         log.info("USB SPEED: {}".format(device.getUsbSpeed()))
@@ -133,7 +144,7 @@ def main():
         gyro = None
         if USE_EXTERNAL_IMU:
             try:
-                gyro = navX('COM13')
+                gyro = navX('COM4')
             except Exception as e:
                 log.error("Could not initialize gyro")
 
@@ -141,7 +152,7 @@ def main():
         camera_params["hfl"] = pipeline_info["resolution_x"] / (2 * math.tan(math.radians(camera_params['hfov']) / 2))
         camera_params["vfl"] = pipeline_info["resolution_y"] / (2 * math.tan(math.radians(camera_params['vfov']) / 2))
 
-        hostSpatials = HostSpatialsCalc(camera_params)
+        hostSpatials = HostSpatialsCalc(camera_params, tag_dictionary, log)
 
         robotAngles = {
             'pitch': None,
@@ -246,7 +257,7 @@ def main():
                             'z': tag.pose_t[2][0] - spatialData['z']
                         }
 
-                        tagPose = TAG_DICTIONARY[tag.tag_id]["pose"]
+                        tagPose = tag_dictionary[tag.tag_id]["pose"]
 
                         camera_pitch = camera_params['mount_angle_radians'] if robotAngles['pitch'] is None else robotAngles['pitch']
                         xy_target_distance = math.cos(camera_pitch + math.radians(tagTranslation['y_angle'])) * tag.pose_t[2][0]
