@@ -1,3 +1,4 @@
+import cv2
 import math
 import numpy as np
 import depthai as dai
@@ -133,3 +134,26 @@ def estimate_robot_pose_from_apriltag(tag, spatialData, camera_params, tagDictio
     }
 
     return robotPose, tag_translation
+
+
+def estimate_robot_pose_with_solvePnP(tag, tagInfo, tag_dictionary, camera_params, robotAngles):
+    tagPose = tag_dictionary[tag.tag_id]["pose"]
+
+    # rvec = np.squeeze(tag.pose_R[0], axis=None)
+    # rvec_matrix = cv2.Rodrigues(rvec)[0]
+    # proj_matrix = np.hstack((rvec_matrix, tag.pose_t))
+    # euler_angles = cv2.decomposeProjectionMatrix(proj_matrix)[6]
+
+    camera_pitch = camera_params['mount_angle_radians'] if robotAngles['pitch'] is None else robotAngles['pitch']
+    xy_target_distance = math.cos(camera_pitch + math.radians(tagInfo['YAngle'])) * tag.pose_t[2][0]
+
+    camera_yaw = 0 if robotAngles['yaw'] is None else robotAngles['yaw']
+    x_translation = math.cos(math.radians(tagInfo['XAngle']) + camera_yaw) * xy_target_distance
+    y_translation = -math.sin(math.radians(tagInfo['XAngle']) + camera_yaw) * xy_target_distance
+
+    robotPose = {
+        'x': tagPose['x'] - x_translation,
+        'y': tagPose['y'] - y_translation
+    }
+
+    return robotPose

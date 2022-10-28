@@ -14,12 +14,15 @@ def create_stereoDepth_pipeline(enable_recording=False, enable_imu=False):
     stereo = pipeline.createStereoDepth()
     xoutDepth = pipeline.createXLinkOut()
     xoutRight = pipeline.createXLinkOut()
+    xinRight = pipeline.createXLinkIn()
 
     depthStr = "depth"
     monoRightStr = "right"
+    monoRightCtrlStr = "monoRightCtrl"
 
     xoutDepth.setStreamName(depthStr)
     xoutRight.setStreamName(monoRightStr)
+    xinRight.setStreamName(monoRightCtrlStr)
 
     # MonoCamera
     monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
@@ -29,6 +32,12 @@ def create_stereoDepth_pipeline(enable_recording=False, enable_imu=False):
     monoRight.setBoardSocket(dai.CameraBoardSocket.RIGHT)
     monoRight.setFps(120)
     monoRight.out.link(xoutRight.input)
+    # Exposure time (microseconds), ISO Sensitivity (100-1600)
+    monoRight.initialControl.setManualExposure(20000, 200)
+    # Temperature in Kelvins (1000-12000)
+    monoRight.initialControl.setAutoWhiteBalanceMode(dai.CameraControl.AutoWhiteBalanceMode.OFF)
+    monoRight.initialControl.setManualWhiteBalance(6000)
+    monoRight.initialControl.setBrightness(5)
 
     outputDepth = True
     outputRectified = False
@@ -49,6 +58,7 @@ def create_stereoDepth_pipeline(enable_recording=False, enable_imu=False):
     monoLeft.out.link(stereo.left)
     monoRight.out.link(stereo.right)
     stereo.depth.link(xoutDepth.input)
+    xinRight.out.link(monoRight.inputControl)
 
     encoderStr = "h265"
     if enable_recording:
@@ -65,7 +75,8 @@ def create_stereoDepth_pipeline(enable_recording=False, enable_imu=False):
         'resolution_y': monoRight.getResolutionHeight(),
         'depthQueue': depthStr,
         'monoRightQueue': monoRightStr,
-        'encoderQueue': encoderStr
+        'encoderQueue': encoderStr,
+        'monoRightCtrlQueue': monoRightCtrlStr
         # 'imuQueue': imuQueueStr
     }
 

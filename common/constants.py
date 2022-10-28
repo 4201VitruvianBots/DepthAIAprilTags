@@ -1,7 +1,7 @@
 
 import numpy as np
 
-TAG_SIZE_M = 0.164
+TAG_SIZE_M = 0.15
 PADDING_PERCENTAGE = 0.31
 
 CAMERA_MOUNT_ANGLE = 0.0

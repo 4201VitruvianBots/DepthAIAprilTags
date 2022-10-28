@@ -11,7 +11,7 @@ from pupil_apriltags import Detector
 from common import constants
 
 from common.utils import FPSHandler
-from edgeTest import apriltag_pipeline
+from edgeTest import edge_pipelines
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-d', dest='debug', action="store_true", default=False, help='Start in Debug Mode')
@@ -31,10 +31,10 @@ def main():
         log.error("CAMERA_TYPE not recognized \"{}\". Defaulting to RGB".format(CAMERA_TYPE))
 
     if CAMERA_TYPE == 'MONO':
-        pipeline, pipeline_info, camera_params = apriltag_pipeline.create_pipeline_mono_edge()
+        pipeline, pipeline_info, camera_params = edge_pipelines.create_pipeline_mono_edge()
         # pipeline, pipeline_info, camera_params = apriltag_pipeline.create_pipeline_mono()
     else:
-        pipeline, pipeline_info, camera_params = apriltag_pipeline.create_pipeline_rgb_edge()
+        pipeline, pipeline_info, camera_params = edge_pipelines.create_pipeline_rgb_edge()
 
     detector = Detector(families='tag36h11',
                         nthreads=3,
