@@ -424,8 +424,9 @@ def main():
                 if 'gyro' in locals():
                     gyro.resetAll()
 
-            if not testGui.isVisible():
-                break
+            if not DISABLE_VIDEO_OUTPUT:
+                if not testGui.isVisible():
+                    break
 
 
 class DebugWindow(QtWidgets.QWidget):
