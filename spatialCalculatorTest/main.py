@@ -7,6 +7,7 @@ import logging
 import math
 import numpy as np
 from PyQt5 import QtGui, QtWidgets, uic
+from PyQt5.QtGui import QIntValidator
 import socket
 import sys
 
@@ -186,6 +187,7 @@ def main():
             'brightness': 5,
             'white_balance': 6000
         }
+        prev_camera_settings = copy.copy(camera_settings)
 
         if not DISABLE_VIDEO_OUTPUT:
             app = QtWidgets.QApplication(sys.argv)
@@ -406,12 +408,15 @@ def main():
             # Camera control
             if not DISABLE_VIDEO_OUTPUT:
                 camera_settings = testGui.getCameraSettings()
-            ctrl = dai.CameraControl()
-            ctrl.setManualExposure(camera_settings['manual_exposure_usec'], camera_settings['manual_exposure_iso'])
-            ctrl.setAutoWhiteBalanceMode(dai.CameraControl.AutoWhiteBalanceMode.OFF)
-            ctrl.setManualWhiteBalance(camera_settings['white_balance'])
-            ctrl.setBrightness(camera_settings['brightness'])
-            qInputRight.send(ctrl)
+
+            if prev_camera_settings != camera_settings:
+                ctrl = dai.CameraControl()
+                ctrl.setManualExposure(camera_settings['manual_exposure_usec'], camera_settings['manual_exposure_iso'])
+                ctrl.setAutoWhiteBalanceMode(dai.CameraControl.AutoWhiteBalanceMode.OFF)
+                ctrl.setManualWhiteBalance(camera_settings['white_balance'])
+                ctrl.setBrightness(camera_settings['brightness'])
+                qInputRight.send(ctrl)
+                prev_camera_settings = copy.copy(camera_settings)
 
             key = cv2.waitKey(1)
             if key == ord('q'):
@@ -455,7 +460,18 @@ class DebugWindow(QtWidgets.QWidget):
         self.solvePnpEnableBtn.clicked.connect(lambda: self.toggleSolvePnp())
 
         self.camera_settings = camera_settings
-        # self.initializeCameraSettings()
+        self.initializeCameraSettings()
+        self.lockCameraUpdates = False
+
+        self.exposureTimeSlider.valueChanged.connect(lambda: self.updateCameraSettings(True))
+        # self.exposureTimeValue.textChanged.connect(lambda: self.updateCameraSettings(False))
+        self.exposureIsoSlider.valueChanged.connect(lambda: self.updateCameraSettings(True))
+        # self.exposureIsoValue.textChanged.connect(lambda: self.updateCameraSettings(False))
+        self.brightnessSlider.valueChanged.connect(lambda: self.updateCameraSettings(True))
+        # self.brightnessValue.textChanged.connect(lambda: self.updateCameraSettings(False))
+        self.whiteBalanceSlider.valueChanged.connect(lambda: self.updateCameraSettings(True))
+        # self.whiteBalanceValue.textChanged.connect(lambda: self.updateCameraSettings(False))
+
         self.pauseResumeBtn.clicked.connect(lambda: self.pauseResumeButtonPressed())
         self.pause = False
         self.show()
@@ -567,31 +583,69 @@ class DebugWindow(QtWidgets.QWidget):
 
     def initializeCameraSettings(self):
         # Exposure time (microseconds)
+        self.exposureTimeLabel.setToolTip("Min: 0, Max 10000")
         self.exposureTimeSlider.setMinimum(0)
-        self.exposureTimeSlider.setMaximum(30)
+        self.exposureTimeSlider.setMaximum(10000)
         self.exposureTimeSlider.setValue(self.camera_settings['manual_exposure_usec'])
-        self.exposureTimeValue.setValue(self.camera_settings['manual_exposure_usec'])
+        self.exposureTimeValue.setText(self.camera_settings['manual_exposure_usec'].__str__())
+        exposureTimeRange = QIntValidator()
+        exposureTimeRange.setRange(0, 10000)
+        self.exposureTimeValue.setValidator(exposureTimeRange)
 
         # Exposure ISO Sensitivity (100, 1600)
+        self.exposureIsoLabel.setToolTip("Min: 100, Max 1600")
         self.exposureIsoSlider.setMinimum(100)
         self.exposureIsoSlider.setMaximum(1600)
         self.exposureIsoSlider.setValue(self.camera_settings['manual_exposure_iso'])
-        self.exposureIsoValue.setValue(self.camera_settings['manual_exposure_iso'])
+        self.exposureIsoValue.setText(self.camera_settings['manual_exposure_iso'].__str__())
+        exposureIsoRange = QIntValidator()
+        exposureIsoRange.setRange(100, 1600)
+        self.exposureIsoValue.setValidator(exposureIsoRange)
 
         # Temperature in Kelvins (1000, 12000)
+        self.whiteBalanceLabel.setToolTip("Min: 1000, Max 12000")
         self.whiteBalanceSlider.setMinimum(1000)
         self.whiteBalanceSlider.setMaximum(12000)
         self.whiteBalanceSlider.setValue(self.camera_settings['white_balance'])
-        self.whiteBalanceValue.setValue(self.camera_settings['white_balance'])
+        self.whiteBalanceValue.setText(self.camera_settings['white_balance'].__str__())
+        whiteBalanceRange = QIntValidator()
+        whiteBalanceRange.setRange(1000, 12000)
+        self.whiteBalanceValue.setValidator(whiteBalanceRange)
 
         # Image Brightness (-10, 10)
+        self.brightnessLabel.setToolTip("Min: -10, Max 10")
         self.brightnessSlider.setMinimum(-10)
         self.brightnessSlider.setMaximum(10)
         self.brightnessSlider.setValue(self.camera_settings['brightness'])
-        self.brightnessValue.setValue(self.camera_settings['brightness'])
+        self.brightnessValue.setText(self.camera_settings['brightness'].__str__())
+        brightnessRange = QIntValidator()
+        brightnessRange.setRange(-10, 10)
+        self.brightnessValue.setValidator(brightnessRange)
 
     def updateCameraSettings(self, slider):
-        pass
+        # if not self.lockCameraUpdates:
+        #     self.lockCameraUpdates = True
+            if slider:
+                self.exposureTimeValue.setText(self.exposureTimeSlider.value().__str__())
+                self.exposureIsoValue.setText(self.exposureIsoSlider.value().__str__())
+                self.whiteBalanceValue.setText(self.whiteBalanceSlider.value().__str__())
+                self.brightnessValue.setText(self.brightnessSlider.value().__str__())
+            else:
+                try:
+                    self.exposureTimeSlider.setValue(int(self.exposureTimeValue.text()))
+                    self.exposureIsoSlider.setValue(int(self.exposureIsoValue.text()))
+                    self.whiteBalanceSlider.setValue(int(self.whiteBalanceValue.text()))
+                    self.brightnessSlider.setValue(int(self.brightnessValue.text()))
+                except Exception as e:
+                    self.lockCameraUpdates = False
+                    return
+
+            self.camera_settings['manual_exposure_usec'] = int(self.exposureTimeValue.text())
+            self.camera_settings['manual_exposure_iso'] = int(self.exposureIsoValue.text())
+            self.camera_settings['white_balance'] = int(self.whiteBalanceValue.text())
+            self.camera_settings['brightness'] = int(self.brightnessValue.text())
+        # else:
+        #     self.lockCameraUpdates = False
 
     def getCameraSettings(self):
         return self.camera_settings

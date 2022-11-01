@@ -33,7 +33,7 @@ def create_stereoDepth_pipeline(enable_recording=False, enable_imu=False):
     monoRight.setFps(120)
     monoRight.out.link(xoutRight.input)
     # Exposure time (microseconds), ISO Sensitivity (100-1600)
-    monoRight.initialControl.setManualExposure(20000, 200)
+    monoRight.initialControl.setManualExposure(10000, 200)
     # Temperature in Kelvins (1000-12000)
     monoRight.initialControl.setAutoWhiteBalanceMode(dai.CameraControl.AutoWhiteBalanceMode.OFF)
     monoRight.initialControl.setManualWhiteBalance(6000)

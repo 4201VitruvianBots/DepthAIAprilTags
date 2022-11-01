@@ -735,14 +735,14 @@
      <item>
       <layout class="QGridLayout" name="gridLayout_11">
        <item row="0" column="0">
-        <widget class="QLabel" name="label_17">
+        <widget class="QLabel" name="exposureTimeLabel">
          <property name="text">
           <string>Exposure (μs)</string>
          </property>
         </widget>
        </item>
        <item row="1" column="0">
-        <widget class="QLabel" name="label_18">
+        <widget class="QLabel" name="exposureIsoLabel">
          <property name="text">
           <string>Exposure (iso)</string>
          </property>
@@ -766,7 +766,7 @@
         </widget>
        </item>
        <item row="3" column="0">
-        <widget class="QLabel" name="label_20">
+        <widget class="QLabel" name="brightnessLabel">
          <property name="text">
           <string>Brightness</string>
          </property>
@@ -775,7 +775,7 @@
        <item row="0" column="1">
         <widget class="QSlider" name="exposureTimeSlider">
          <property name="enabled">
-          <bool>false</bool>
+          <bool>true</bool>
          </property>
          <property name="autoFillBackground">
           <bool>false</bool>
@@ -799,7 +799,7 @@
         </widget>
        </item>
        <item row="2" column="0">
-        <widget class="QLabel" name="label_19">
+        <widget class="QLabel" name="whiteBalanceLabel">
          <property name="text">
           <string>White Balance</string>
          </property>
