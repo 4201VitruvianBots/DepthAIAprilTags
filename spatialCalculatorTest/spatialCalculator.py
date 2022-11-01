@@ -49,10 +49,6 @@ class HostSpatialsCalc:
 
     # roi has to be list of ints
     def calc_spatials(self, depthFrame, tag, roi, robotAngles, averaging_method=np.mean):
-        if tag.tag_id not in self.tagDictionary.keys():
-            self.log.error('Tag {} detected, but not in dictionary. Skipping pose estimation'.format(tag.tag_id))
-            return None, None, None
-
         tagPose = self.tagDictionary[tag.tag_id]["pose"]
 
         # roi = self._check_input(roi, depthFrame)  # If point was passed, convert it to ROI

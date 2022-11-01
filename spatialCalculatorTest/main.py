@@ -23,6 +23,7 @@ from spatialCalculator import HostSpatialsCalc, estimate_robot_pose_with_solvePn
 parser = argparse.ArgumentParser()
 parser.add_argument('-d', dest='debug', action="store_true", default=False, help='Start in Debug Mode')
 parser.add_argument('-t', dest='test', action="store_true", default=False, help='Start in Test Mode')
+parser.add_argument('-pt', dest='performance_test', action="store_true", default=False, help='Set Performance Test Mode')
 
 parser.add_argument('-f', dest='family', action="store", type=str, default='tag36h11',
                     help='Tag family (default: tag36h11)')
@@ -81,6 +82,10 @@ def init_networktables():
 
 
 def main():
+    if args.performance_test:
+        disabledStdOut = logging.StreamHandler(stream=None)
+        log.addHandler(disabledStdOut)
+
     log.info("Starting AprilTag Spatial Detector")
 
     DISABLE_VIDEO_OUTPUT = args.test
@@ -193,6 +198,7 @@ def main():
             try:
                 inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
                 inRight = qRight.get()
+                fps.nextIter()
             except Exception as e:
                 log.error("Frame not received")
                 continue
@@ -230,21 +236,22 @@ def main():
                                    camera_params=camera_params['intrinsicValues'],
                                    tag_size=constants.TAG_SIZE_M)
 
+            detectedTags = []
+            x_pos = []
+            y_pos = []
+            z_pos = []
+            pnp_tag_id = []
+            pnp_x_pos = []
+            pnp_y_pos = []
+            pnp_z_pos = []
+            pose_id = []
             if len(tags) > 0:
-                detectedTags = []
-                x_pos = []
-                y_pos = []
-                z_pos = []
-                pnp_tag_id = []
-                pnp_x_pos = []
-                pnp_y_pos = []
-                pnp_z_pos = []
-                pose_id = []
-
                 for tag in tags:
                     if not DISABLE_VIDEO_OUTPUT:
                         if tag.tag_id not in testGui.getTagFilter():
                             continue
+                        elif tag.tag_id not in TAG_DICTIONARY.keys():
+                            log.warning("Tag ID {} found, but not defined".format(tag.tag_id))
                     if tag.decision_margin < 30:
                         log.warning("Tag {} found, but not valid".format(tag.tag_id))
                         continue
@@ -297,86 +304,83 @@ def main():
                                                                            tagInfo['deltaTranslation']['y'],
                                                                            tagInfo['deltaTranslation']['z']))
 
-                # Merge AprilTag measurements to estimate
-                if len(detectedTags) > 0:
-                    avg_x = sum(x_pos) / len(x_pos)
-                    avg_y = sum(y_pos) / len(y_pos)
-                    avg_z = sum(z_pos) / len(z_pos)
-                    log.info("Estimated Pose X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(avg_x, avg_y, avg_z))
-                    log.info("Std dev X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(np.std(x_pos),
-                                                                              np.std(y_pos),
-                                                                              np.std(z_pos)))
-
-                    nt_depthai_tab.putNumber("Avg X Pose", avg_x)
-                    nt_depthai_tab.putNumber("Avg Y Pose", avg_y)
-                    nt_depthai_tab.putNumber("Heading Pose", 0 if robotAngles['yaw'] is None else robotAngles['yaw'])
-
-                nt_depthai_tab.putNumberArray("Pose ID", pose_id)
-                nt_depthai_tab.putNumberArray("X Poses", x_pos)
-                nt_depthai_tab.putNumberArray("Y Poses", y_pos)
-                nt_depthai_tab.putNumberArray("Z Poses", z_pos)
-
-                nt_depthai_tab.putNumberArray("PnP Pose ID", pnp_tag_id)
-                nt_depthai_tab.putNumberArray("PnP X Poses", pnp_x_pos)
-                nt_depthai_tab.putNumberArray("PnP Y Poses", pnp_y_pos)
-
-                stats['numTags'] = len(detectedTags)
-                stats['depthAI'] = {
-                    'x_pos': x_pos,
-                    'y_pos': y_pos,
-                    'z_pos': z_pos,
-                }
-                stats['solvePnP'] = {
-                    'x_pos': pnp_x_pos,
-                    'y_pos': pnp_y_pos,
-                    'z_pos': [0]
-                }
-
-                if not DISABLE_VIDEO_OUTPUT and len(detectedTags) > 0:
-                    for detectedTag in detectedTags:
-                        points = detectedTag["tag"].corners.astype(np.int32)
-                        # Shift points since this is a snapshot
-                        cv2.polylines(frameRight, [points], True, (120, 120, 120), 3)
-                        textX = min(points[:, 0])
-                        textY = min(points[:, 1]) + 20
-                        cv2.putText(frameRight, "tag_id: {}".format(detectedTag['tag'].tag_id),
-                                    (textX, textY), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
-
-                        if ENABLE_SOLVEPNP:
-                            ipoints, _ = cv2.projectPoints(constants.OPOINTS,
-                                                           detectedTag["tag"].pose_R,
-                                                           detectedTag["tag"].pose_t,
-                                                           camera_params['iMatrix'],
-                                                           np.zeros(5))
-
-                            ipoints = np.round(ipoints).astype(int)
-
-                            ipoints = [tuple(pt) for pt in ipoints.reshape(-1, 2)]
-
-                            for i, j in constants.EDGES:
-                                cv2.line(frameRight, ipoints[i], ipoints[j], (0, 255, 0), 1, 16)
-
-                        cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["spatialData"]['x']),
-                                    (textX, textY + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
-                        cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["spatialData"]['y']),
-                                    (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
-                        cv2.putText(frameRight, "x angle: {:.2f}".format(detectedTag["translation"]['x_angle']),
-                                    (textX, textY + 60), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
-                        cv2.putText(frameRight, "y angle: {:.2f}".format(detectedTag["translation"]['y_angle']),
-                                    (textX, textY + 80), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
-                        cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["spatialData"]['z']),
-                                    (textX, textY + 100), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
-                        cv2.rectangle(frameRight, detectedTag["topLeftXY"], detectedTag["bottomRightXY"],
-                                      (0, 0, 0), 3)
-
-            fps.nextIter()
+            fpsValue = fps.fps()
             latencyMs = (dai.Clock.now() - inDepth.getTimestamp()).total_seconds() * 1000.0
             latency = np.append(latency, latencyMs)
             avgLatency = np.average(latency) if len(latency) < 100 else np.average(latency[-100:])
+            latencyStd = np.std(latency) if len(latency) < 100 else np.std(latency[-100:])
+
+            nt_depthai_tab.putNumberArray("Pose ID", pose_id)
+            nt_depthai_tab.putNumberArray("X Poses", x_pos)
+            nt_depthai_tab.putNumberArray("Y Poses", y_pos)
+            nt_depthai_tab.putNumberArray("Z Poses", z_pos)
+
+            # Merge AprilTag measurements to estimate
+            log.info("Estimated Pose X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(np.average(x_pos), np.average(y_pos), np.average(z_pos)))
+            log.info("Std dev X: {:.2f}\tY: {:.2f}\tZ: {:.2f}".format(np.std(x_pos),
+                                                                      np.std(y_pos),
+                                                                      np.std(z_pos)))
+            nt_depthai_tab.putNumber("Avg X Pose", np.average(x_pos))
+            nt_depthai_tab.putNumber("Avg Y Pose", np.average(x_pos))
+            nt_depthai_tab.putNumber("Heading Pose", 0 if robotAngles['yaw'] is None else robotAngles['yaw'])
+            nt_depthai_tab.putNumber("latency", latency[-1])
+
+            nt_depthai_tab.putNumberArray("PnP Pose ID", pnp_tag_id)
+            nt_depthai_tab.putNumberArray("PnP X Poses", pnp_x_pos)
+            nt_depthai_tab.putNumberArray("PnP Y Poses", pnp_y_pos)
+
+            stats['numTags'] = len(detectedTags)
+            stats['depthAI'] = {
+                'x_pos': x_pos,
+                'y_pos': y_pos,
+                'z_pos': z_pos,
+            }
+            stats['solvePnP'] = {
+                'x_pos': pnp_x_pos,
+                'y_pos': pnp_y_pos,
+                'z_pos': [0]
+            }
+
             if not DISABLE_VIDEO_OUTPUT:
+                for detectedTag in detectedTags:
+                    points = detectedTag["tag"].corners.astype(np.int32)
+                    # Shift points since this is a snapshot
+                    cv2.polylines(frameRight, [points], True, (120, 120, 120), 3)
+                    textX = min(points[:, 0])
+                    textY = min(points[:, 1]) + 20
+                    cv2.putText(frameRight, "tag_id: {}".format(detectedTag['tag'].tag_id),
+                                (textX, textY), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
+
+                    if ENABLE_SOLVEPNP:
+                        ipoints, _ = cv2.projectPoints(constants.OPOINTS,
+                                                       detectedTag["tag"].pose_R,
+                                                       detectedTag["tag"].pose_t,
+                                                       camera_params['iMatrix'],
+                                                       np.zeros(5))
+
+                        ipoints = np.round(ipoints).astype(int)
+
+                        ipoints = [tuple(pt) for pt in ipoints.reshape(-1, 2)]
+
+                        for i, j in constants.EDGES:
+                            cv2.line(frameRight, ipoints[i], ipoints[j], (0, 255, 0), 1, 16)
+
+                    cv2.putText(frameRight, "x: {:.2f}".format(detectedTag["spatialData"]['x']),
+                                (textX, textY + 20), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
+                    cv2.putText(frameRight, "y: {:.2f}".format(detectedTag["spatialData"]['y']),
+                                (textX, textY + 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
+                    cv2.putText(frameRight, "x angle: {:.2f}".format(detectedTag["translation"]['x_angle']),
+                                (textX, textY + 60), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
+                    cv2.putText(frameRight, "y angle: {:.2f}".format(detectedTag["translation"]['y_angle']),
+                                (textX, textY + 80), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
+                    cv2.putText(frameRight, "z: {:.2f}".format(detectedTag["spatialData"]['z']),
+                                (textX, textY + 100), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 255, 255))
+                    cv2.rectangle(frameRight, detectedTag["topLeftXY"], detectedTag["bottomRightXY"],
+                                  (0, 0, 0), 3)
+
                 if not testGui.getPauseResumeState():
                     cv2.circle(frameRight, (int(frameRight.shape[1]/2), int(frameRight.shape[0]/2)), 1, (255, 255, 255), 1)
-                    cv2.putText(frameRight, "FPS: {:.2f}".format(fps.fps()), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
+                    cv2.putText(frameRight, "FPS: {:.2f}".format(fpsValue), (0, 24), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
                     cv2.putText(frameRight, "Latency: {:.2f}ms".format(avgLatency), (0, 50), cv2.FONT_HERSHEY_TRIPLEX, 1, (255, 255, 255))
 
                     depthFrameColor = cv2.normalize(depthFrame, None, 255, 0, cv2.NORM_INF, cv2.CV_8UC1)
@@ -388,8 +392,13 @@ def main():
                 testGui.updateStatsValue(stats)
                 testGui.updateFrames(frameRight, depthFrameColor)
             else:
-                latencyStd = np.std(latency) if len(latency) < 100 else np.std(latency[-100:])
-                print('FPS: {:.2f}\tLatency: {:.2f} ms\tStd: {:.2f}'.format(fps.fps(), avgLatency, np.std(latencyStd)))
+                depthA
+                print('FPS: {:.2f}\tLatency: {:.2f} ms\tStd: {:.2f}'.format(fpsValue, avgLatency, latencyStd))
+                print('DepthAI')
+                print("         Avg.: {:.6f}\t{:.6f}\t{:.6f}".format(np.average(x_pos), np.average(y_pos), np.average(z_pos)))
+                print("         Std.: {:.6f}\t{:.6f}\t{:.6f}".format(np.average(x_pos), np.average(y_pos), np.average(z_pos)))
+                print('AprilTag Pose')
+                print("         Avg.:    ")
 
             lastMonoFrame = copy.copy(frameRight)
             lastDepthFrame = copy.copy(depthFrame)
@@ -443,10 +452,10 @@ class DebugWindow(QtWidgets.QWidget):
 
         self.solvePnp = solvePnp
         self.solvePnpEnableBtn.setChecked(self.solvePnp)
-        self.solvePnpEnableBtn.clicked.c
+        self.solvePnpEnableBtn.clicked.connect(lambda: self.toggleSolvePnp())
 
         self.camera_settings = camera_settings
-        self.initializeCameraSettings()
+        # self.initializeCameraSettings()
         self.pauseResumeBtn.clicked.connect(lambda: self.pauseResumeButtonPressed())
         self.pause = False
         self.show()
@@ -558,9 +567,9 @@ class DebugWindow(QtWidgets.QWidget):
 
     def initializeCameraSettings(self):
         # Exposure time (microseconds)
-        # self.exposureTimeSlider.setMinimum(0)
-        # self.exposureTimeSlider.setMaximum(30)
-        # self.exposureTimeSlider.setValue(self.camera_settings['manual_exposure_usec'])
+        self.exposureTimeSlider.setMinimum(0)
+        self.exposureTimeSlider.setMaximum(30)
+        self.exposureTimeSlider.setValue(self.camera_settings['manual_exposure_usec'])
         self.exposureTimeValue.setValue(self.camera_settings['manual_exposure_usec'])
 
         # Exposure ISO Sensitivity (100, 1600)
