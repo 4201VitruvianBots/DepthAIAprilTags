@@ -394,7 +394,6 @@ def main():
                 testGui.updateStatsValue(stats)
                 testGui.updateFrames(frameRight, depthFrameColor)
             else:
-                depthA
                 print('FPS: {:.2f}\tLatency: {:.2f} ms\tStd: {:.2f}'.format(fpsValue, avgLatency, latencyStd))
                 print('DepthAI')
                 print("         Avg.: {:.6f}\t{:.6f}\t{:.6f}".format(np.average(x_pos), np.average(y_pos), np.average(z_pos)))
