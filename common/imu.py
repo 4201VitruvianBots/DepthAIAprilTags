@@ -1,5 +1,6 @@
 import depthai as dai
 import math
+import platform
 import serial
 import socket
 import threading
@@ -8,7 +9,12 @@ from .AHRSProtocol import *
 
 
 class navX:
-    def __init__(self, port='COM4'):
+    def __init__(self, port=None):
+        if port is None:
+            if platform.system() == 'Windows':
+                port = 'COM4'
+            elif platform.system() == 'Linux':
+                port = '/dev/ttyACM0'
         self.s = serial.Serial(port)
         self.data = dict()
         self.offsets = dict()

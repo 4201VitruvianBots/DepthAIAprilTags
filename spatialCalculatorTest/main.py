@@ -142,7 +142,7 @@ def main():
             "intrinsicValues": (iMatrix[0][0], iMatrix[1][1], iMatrix[0][2], iMatrix[1][2])
         }
 
-        device.setIrLaserDotProjectorBrightness(200)
+        # device.setIrLaserDotProjectorBrightness(200)
         # device.setIrFloodLightBrightness(1500)
 
         depthQueue = device.getOutputQueue(name=pipeline_info["depthQueue"], maxSize=1, blocking=False)
@@ -182,7 +182,7 @@ def main():
         }
 
         camera_settings = {
-            'manual_exposure_usec': 20000,
+            'manual_exposure_usec': 10000,
             'manual_exposure_iso': 200,
             'brightness': 5,
             'white_balance': 6000
@@ -196,6 +196,11 @@ def main():
 
         lastMonoFrame = None
         lastDepthFrame = None
+
+        if DISABLE_VIDEO_OUTPUT:
+            # print("\033[2J", end='')
+            pass
+
         while True:
             try:
                 inDepth = depthQueue.get()  # blocking call, will wait until a new data has arrived
@@ -389,17 +394,18 @@ def main():
                     depthFrameColor = cv2.equalizeHist(depthFrameColor)
                     depthFrameColor = cv2.applyColorMap(depthFrameColor, cv2.COLORMAP_HOT)
 
-                # cv2.imshow(pipeline_info["monoRightQueue"], frameRight)
-                # cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
-                testGui.updateStatsValue(stats)
-                testGui.updateFrames(frameRight, depthFrameColor)
+                    # cv2.imshow(pipeline_info["monoRightQueue"], frameRight)
+                    # cv2.imshow(pipeline_info["depthQueue"], depthFrameColor)
+                    testGui.updateTagIds(pose_id)
+                    testGui.updateStatsValue(stats)
+                    testGui.updateFrames(frameRight, depthFrameColor)
             else:
                 print('FPS: {:.2f}\tLatency: {:.2f} ms\tStd: {:.2f}'.format(fpsValue, avgLatency, latencyStd))
                 print('DepthAI')
+                print('Tags: {}'.format(pose_id))
                 print("         Avg.: {:.6f}\t{:.6f}\t{:.6f}".format(np.average(x_pos), np.average(y_pos), np.average(z_pos)))
                 print("         Std.: {:.6f}\t{:.6f}\t{:.6f}".format(np.average(x_pos), np.average(y_pos), np.average(z_pos)))
-                print('AprilTag Pose')
-                print("         Avg.:    ")
+                # print("\033[2J", end='')
 
             lastMonoFrame = copy.copy(frameRight)
             lastDepthFrame = copy.copy(depthFrame)
@@ -481,6 +487,12 @@ class DebugWindow(QtWidgets.QWidget):
 
     def updatePitchValue(self, value):
         self.pitchValue.setText("{:.06f}".format(value))
+
+    def updateTagIds(self, tagIds):
+        if len(tagIds) > 0:
+            self.detectedTagsValue.setText("{}".format(tagIds))
+        else:
+            self.detectedTagsValue.setText('')
 
     def updateStatsValue(self, values=None):
         if values is None:

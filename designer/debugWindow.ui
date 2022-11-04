@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>860</width>
-    <height>684</height>
+    <width>1096</width>
+    <height>889</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -28,7 +28,7 @@
   <layout class="QGridLayout" name="gridLayout_12">
    <item row="0" column="0">
     <layout class="QVBoxLayout" name="verticalLayout">
-     <item>
+     <item alignment="Qt::AlignHCenter">
       <widget class="QLabel" name="label">
        <property name="maximumSize">
         <size>
@@ -269,7 +269,7 @@
        </item>
       </layout>
      </item>
-     <item>
+     <item alignment="Qt::AlignHCenter">
       <widget class="QPushButton" name="resetGyroBtn">
        <property name="maximumSize">
         <size>
@@ -282,11 +282,11 @@
        </property>
       </widget>
      </item>
-     <item>
+     <item alignment="Qt::AlignHCenter">
       <widget class="Line" name="line_2">
        <property name="maximumSize">
         <size>
-         <width>223</width>
+         <width>16777215</width>
          <height>16777215</height>
         </size>
        </property>
@@ -338,7 +338,7 @@
        </item>
       </layout>
      </item>
-     <item>
+     <item alignment="Qt::AlignHCenter">
       <widget class="QLabel" name="label_4">
        <property name="maximumSize">
         <size>
@@ -719,7 +719,7 @@
        </property>
       </widget>
      </item>
-     <item>
+     <item alignment="Qt::AlignHCenter">
       <widget class="QPushButton" name="pauseResumeBtn">
        <property name="maximumSize">
         <size>
